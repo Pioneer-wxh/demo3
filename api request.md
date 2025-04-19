@@ -1,4 +1,3 @@
----
 
 # FinanceTracker API 文档
 
@@ -6,7 +5,7 @@
 
 ### 接口定义
 ```java
-public interface DataService<T>
+    public interface DataService<T>
 ```
 通用数据持久化接口，支持多种存储格式（JSON/CSV）
 
