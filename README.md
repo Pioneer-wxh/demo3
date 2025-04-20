@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # Personal Finance Tracker
 
 A Java-based personal finance tracking application with AI-assisted analysis.
