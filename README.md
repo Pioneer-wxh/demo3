@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # Personal Finance Tracker
 
 A Java-based personal finance tracking application with AI-assisted analysis.
@@ -199,6 +199,10 @@ java -jar finance-tracker-1.0-SNAPSHOT-jar-with-dependencies.jar
 ## Future Enhancements
 
 See the `FUTURE_ENHANCEMENTS.md` file for planned improvements and feature additions.
+<<<<<<< HEAD
 =======
 # demo3
 >>>>>>> 4bdd07bb8ccdf7b92b703f0913793b994dfdc8fc
+=======
+
+>>>>>>> d2ca266ad8598d67e1b993bf650eb8b7cfa12ca3
