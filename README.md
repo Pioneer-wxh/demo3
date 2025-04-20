@@ -199,6 +199,4 @@ java -jar finance-tracker-1.0-SNAPSHOT-jar-with-dependencies.jar
 ## Future Enhancements
 
 See the `FUTURE_ENHANCEMENTS.md` file for planned improvements and feature additions.
-=======
-# demo3
->>>>>>> 4bdd07bb8ccdf7b92b703f0913793b994dfdc8fc
+
