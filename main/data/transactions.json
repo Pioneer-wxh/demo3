@@ -1,0 +1,12 @@
+[
+  {
+    "id": "4e20f9e5-fc8f-4d6e-8c67-281c0ce02d77",
+    "date": "2025-04-19",
+    "amount": 1.0,
+    "description": "1",
+    "category": "Food",
+    "participant": "1",
+    "notes": "1",
+    "isExpense": true
+  }
+]

@@ -1,0 +1,24 @@
+{
+  "monthStartDay": 1,
+  "defaultCurrency": "CNY",
+  "dateFormat": "yyyy-MM-dd",
+  "darkModeEnabled": false,
+  "defaultCategories": [
+    "Food",
+    "Transportation",
+    "Housing",
+    "Utilities",
+    "Entertainment",
+    "Shopping",
+    "Healthcare",
+    "Education",
+    "Salary",
+    "Investment",
+    "Gift",
+    "Other"
+  ],
+  "dataStoragePath": "data/",
+  "autoBackupEnabled": true,
+  "backupFrequencyDays": 7,
+  "aiAssistanceEnabled": true
+}
