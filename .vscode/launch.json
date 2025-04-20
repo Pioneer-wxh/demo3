@@ -1,0 +1,26 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "java",
+            "name": "Main",
+            "request": "launch",
+            "mainClass": "com.financetracker.Main",
+            "projectName": "finance-tracker"
+        },
+        {
+            "type": "java",
+            "name": "Launch Finance Tracker",
+            "request": "launch",
+            "mainClass": "com.financetracker.FinanceTrackerApp",
+            "projectName": "finance-tracker",
+            "classPaths": [
+                "${workspaceFolder}/lib/*.jar",
+                "${workspaceFolder}/bin"
+            ],
+            "sourcePaths": [
+                "${workspaceFolder}/src/main/java"
+            ]
+        }
+    ]
+}
