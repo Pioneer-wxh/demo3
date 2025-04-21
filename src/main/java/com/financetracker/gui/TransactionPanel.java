@@ -89,7 +89,7 @@ public class TransactionPanel extends JPanel {
         
         // Create table
         transactionTable = new JTable(tableModel);
-        transactionTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        transactionTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         
         // Add table to scroll pane
         JScrollPane scrollPane = new JScrollPane(transactionTable);
@@ -100,6 +100,9 @@ public class TransactionPanel extends JPanel {
         tableButtonPanel.setLayout(new FlowLayout(FlowLayout.RIGHT));
         
         // Add buttons to table button panel
+        JButton batchDeleteButton = new JButton("批量删除");
+        batchDeleteButton.addActionListener(e -> batchDeleteTransactions());
+        
         JButton deleteButton = new JButton("Delete");
         deleteButton.addActionListener(e -> deleteSelectedTransaction());
         
@@ -109,8 +112,21 @@ public class TransactionPanel extends JPanel {
         JButton importButton = new JButton("Import CSV");
         importButton.addActionListener(e -> importCsv());
         
+        JButton batchImportButton = new JButton("批量导入CSV");
+        batchImportButton.addActionListener(e -> batchImportCsv());
+        
+        JButton exportButton = new JButton("导出到CSV");
+        exportButton.addActionListener(e -> exportToCsv());
+        
+        JButton exportMultipleButton = new JButton("按月导出CSV");
+        exportMultipleButton.addActionListener(e -> exportToMultipleCsv());
+        
         tableButtonPanel.add(importButton);
+        tableButtonPanel.add(batchImportButton);
+        tableButtonPanel.add(exportButton);
+        tableButtonPanel.add(exportMultipleButton);
         tableButtonPanel.add(editButton);
+        tableButtonPanel.add(batchDeleteButton);
         tableButtonPanel.add(deleteButton);
         
         // Add table button panel to table panel
@@ -371,29 +387,283 @@ public class TransactionPanel extends JPanel {
     }
     
     /**
-     * Imports transactions from a CSV file.
+     * 批量导入CSV文件
      */
-    private void importCsv() {
-        // Create file chooser
-        JFileChooser fileChooser = new JFileChooser();
-        fileChooser.setDialogTitle("Import CSV File");
-        fileChooser.setFileFilter(new FileNameExtensionFilter("CSV Files", "csv"));
+    private void batchImportCsv() {
+        // 创建目录选择器
+        JFileChooser dirChooser = new JFileChooser();
+        dirChooser.setDialogTitle("选择包含CSV文件的目录");
+        dirChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         
-        // Show file chooser
-        int result = fileChooser.showOpenDialog(this);
+        // 默认导入路径设置为E:\code\Java\software_lab\data
+        File defaultDir = new File("E:\\code\\Java\\software_lab\\data");
+        if (defaultDir.exists() && defaultDir.isDirectory()) {
+            dirChooser.setCurrentDirectory(defaultDir);
+            dirChooser.setSelectedFile(defaultDir);
+        }
+        
+        // 显示目录选择器
+        int result = dirChooser.showOpenDialog(this);
         if (result != JFileChooser.APPROVE_OPTION) {
             return;
         }
         
-        // Get selected file
-        File file = fileChooser.getSelectedFile();
+        // 获取选择的目录
+        File selectedDir = dirChooser.getSelectedFile();
+        final String directoryPath = selectedDir.getAbsolutePath();
         
-        // Show import dialog
-        ImportCsvDialog dialog = new ImportCsvDialog(mainFrame, file.getAbsolutePath(), transactionService);
-        dialog.setVisible(true);
+        // 询问用户确认
+        int confirm = JOptionPane.showConfirmDialog(this, 
+                "是否要导入目录 " + directoryPath + " 中的所有CSV文件？\n" +
+                "注意：这将自动检测并导入所有符合格式的CSV文件。", 
+                "确认批量导入", JOptionPane.YES_NO_OPTION);
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
         
-        // Reload transactions
-        loadTransactions();
+        // 显示进度对话框
+        final JDialog progressDialog = new JDialog(mainFrame, "批量导入中...", true);
+        progressDialog.setLayout(new BorderLayout());
+        JProgressBar progressBar = new JProgressBar();
+        progressBar.setIndeterminate(true);
+        JLabel statusLabel = new JLabel("正在批量导入CSV文件，请稍候...");
+        statusLabel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        progressDialog.add(statusLabel, BorderLayout.NORTH);
+        progressDialog.add(progressBar, BorderLayout.CENTER);
+        progressDialog.setSize(400, 120);
+        progressDialog.setLocationRelativeTo(this);
+        
+        // 在后台线程中执行导入
+        SwingWorker<com.financetracker.service.CsvBatchImporter.ImportResult, Void> worker = 
+            new SwingWorker<com.financetracker.service.CsvBatchImporter.ImportResult, Void>() {
+                @Override
+                protected com.financetracker.service.CsvBatchImporter.ImportResult doInBackground() throws Exception {
+                    // 创建批量导入器
+                    com.financetracker.service.CsvBatchImporter importer = 
+                        new com.financetracker.service.CsvBatchImporter(transactionService);
+                    
+                    // 执行批量导入
+                    return importer.importAllCsvFiles(directoryPath);
+                }
+                
+                @Override
+                protected void done() {
+                    progressDialog.dispose();
+                    try {
+                        // 获取导入结果
+                        com.financetracker.service.CsvBatchImporter.ImportResult result = get();
+                        
+                        // 根据结果显示不同的消息
+                        if (result.getTotalRecordCount() > 0) {
+                            JOptionPane.showMessageDialog(TransactionPanel.this, 
+                                    "批量导入完成：\n" + result.toString(), 
+                                    "导入成功", JOptionPane.INFORMATION_MESSAGE);
+                            
+                            // 重新加载交易记录
+                            loadTransactions();
+                        } else {
+                            JOptionPane.showMessageDialog(TransactionPanel.this, 
+                                    "未能成功导入任何记录。\n" +
+                                    "原因可能是：\n" +
+                                    "1. 目录中没有CSV文件\n" +
+                                    "2. CSV文件格式不正确\n" +
+                                    "3. CSV文件中没有有效的交易记录", 
+                                    "导入失败", JOptionPane.WARNING_MESSAGE);
+                        }
+                    } catch (Exception e) {
+                        JOptionPane.showMessageDialog(TransactionPanel.this, 
+                                "批量导入过程中出错: " + e.getMessage(), 
+                                "导入错误", JOptionPane.ERROR_MESSAGE);
+                        e.printStackTrace();
+                    }
+                }
+            };
+        
+        // 启动导入线程
+        worker.execute();
+        progressDialog.setVisible(true);
+    }
+    
+    /**
+     * Imports transactions from a CSV file.
+     */
+    private void importCsv() {
+        try {
+            // Create file chooser
+            JFileChooser fileChooser = new JFileChooser();
+            fileChooser.setDialogTitle("Import CSV File");
+            fileChooser.setFileFilter(new FileNameExtensionFilter("CSV Files", "csv"));
+            
+            // 尝试设置默认导入路径
+            File defaultDir = new File("E:\\code\\Java\\software_lab\\data");
+            if (defaultDir.exists() && defaultDir.isDirectory()) {
+                fileChooser.setCurrentDirectory(defaultDir);
+            }
+            
+            // Show file chooser
+            int result = fileChooser.showOpenDialog(this);
+            if (result != JFileChooser.APPROVE_OPTION) {
+                return;
+            }
+            
+            // Get selected file
+            File file = fileChooser.getSelectedFile();
+            if (!file.exists()) {
+                JOptionPane.showMessageDialog(this, "所选文件不存在", "错误", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            
+            // Show import dialog
+            ImportCsvDialog dialog = new ImportCsvDialog(mainFrame, file.getAbsolutePath(), transactionService);
+            dialog.setVisible(true);
+            
+            // Reload transactions
+            loadTransactions();
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "导入CSV文件时出错: " + e.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+            e.printStackTrace();
+        }
+    }
+    
+    /**
+     * Exports transactions to a CSV file.
+     */
+    private void exportToCsv() {
+        // 确保有交易记录可以导出
+        List<Transaction> transactions = transactionService.getAllTransactions();
+        if (transactions.isEmpty()) {
+            JOptionPane.showMessageDialog(this, 
+                "没有交易记录可以导出。", 
+                "警告", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        // 询问用户是否要导出所有记录
+        int confirm = JOptionPane.showConfirmDialog(this, 
+            "确定要导出所有交易记录到CSV文件吗？", 
+            "确认导出", JOptionPane.YES_NO_OPTION);
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
+        
+        // 导出交易记录
+        boolean success = transactionService.createBackup();
+        if (success) {
+            JOptionPane.showMessageDialog(this, 
+                "交易记录已成功导出到CSV文件。\n文件位置: E:\\code\\Java\\software_lab\\data\\transactions.csv", 
+                "导出成功", JOptionPane.INFORMATION_MESSAGE);
+        } else {
+            JOptionPane.showMessageDialog(this, 
+                "导出交易记录时出错，请稍后再试。", 
+                "导出失败", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+    
+    /**
+     * 将交易记录按月份导出到多个CSV文件
+     */
+    private void exportToMultipleCsv() {
+        // 确保有交易记录可以导出
+        List<Transaction> transactions = transactionService.getAllTransactions();
+        if (transactions.isEmpty()) {
+            JOptionPane.showMessageDialog(this, 
+                "没有交易记录可以导出。", 
+                "警告", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        
+        // 创建目录选择器
+        JFileChooser dirChooser = new JFileChooser();
+        dirChooser.setDialogTitle("选择导出目录");
+        dirChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+        
+        // 默认导出路径设置为E:\code\Java\software_lab\data\export
+        File defaultDir = new File("E:\\code\\Java\\software_lab\\data\\export");
+        try {
+            defaultDir.mkdirs(); // 确保目录存在
+        } catch (Exception e) {
+            // 忽略创建目录错误
+        }
+        
+        if (defaultDir.exists() && defaultDir.isDirectory()) {
+            dirChooser.setCurrentDirectory(defaultDir);
+            dirChooser.setSelectedFile(defaultDir);
+        }
+        
+        // 显示目录选择器
+        int result = dirChooser.showSaveDialog(this);
+        if (result != JFileChooser.APPROVE_OPTION) {
+            return;
+        }
+        
+        // 获取选择的目录
+        File selectedDir = dirChooser.getSelectedFile();
+        final String directoryPath = selectedDir.getAbsolutePath();
+        
+        // 询问用户确认
+        int confirm = JOptionPane.showConfirmDialog(this, 
+                "是否要将交易记录按月份导出到目录 " + directoryPath + " 中？\n" +
+                "注意：这将为每个月创建一个CSV文件，并创建一个包含所有交易记录的文件。", 
+                "确认导出", JOptionPane.YES_NO_OPTION);
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
+        
+        // 显示进度对话框
+        final JDialog progressDialog = new JDialog(mainFrame, "导出中...", true);
+        progressDialog.setLayout(new BorderLayout());
+        JProgressBar progressBar = new JProgressBar();
+        progressBar.setIndeterminate(true);
+        JLabel statusLabel = new JLabel("正在导出交易记录，请稍候...");
+        statusLabel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        progressDialog.add(statusLabel, BorderLayout.NORTH);
+        progressDialog.add(progressBar, BorderLayout.CENTER);
+        progressDialog.setSize(400, 120);
+        progressDialog.setLocationRelativeTo(this);
+        
+        // 在后台线程中执行导出
+        SwingWorker<com.financetracker.service.TransactionCsvExporter.ExportResult, Void> worker = 
+            new SwingWorker<com.financetracker.service.TransactionCsvExporter.ExportResult, Void>() {
+                @Override
+                protected com.financetracker.service.TransactionCsvExporter.ExportResult doInBackground() throws Exception {
+                    // 创建导出器
+                    com.financetracker.service.TransactionCsvExporter exporter = 
+                        new com.financetracker.service.TransactionCsvExporter();
+                    
+                    // 执行导出
+                    return exporter.exportTransactionsByMonth(transactions, directoryPath);
+                }
+                
+                @Override
+                protected void done() {
+                    progressDialog.dispose();
+                    try {
+                        // 获取导出结果
+                        com.financetracker.service.TransactionCsvExporter.ExportResult result = get();
+                        
+                        // 显示结果消息
+                        if (result.getSuccessFileCount() > 0) {
+                            JOptionPane.showMessageDialog(TransactionPanel.this, 
+                                    "导出完成：\n" + result.toString() + "\n" +
+                                    "文件已保存到目录：\n" + directoryPath, 
+                                    "导出成功", JOptionPane.INFORMATION_MESSAGE);
+                        } else {
+                            JOptionPane.showMessageDialog(TransactionPanel.this, 
+                                    "导出失败，未能成功创建任何文件。", 
+                                    "导出失败", JOptionPane.ERROR_MESSAGE);
+                        }
+                    } catch (Exception e) {
+                        JOptionPane.showMessageDialog(TransactionPanel.this, 
+                                "导出过程中出错: " + e.getMessage(), 
+                                "导出错误", JOptionPane.ERROR_MESSAGE);
+                        e.printStackTrace();
+                    }
+                }
+            };
+        
+        // 启动导出线程
+        worker.execute();
+        progressDialog.setVisible(true);
     }
     
     /**
@@ -407,5 +677,51 @@ public class TransactionPanel extends JPanel {
         participantField.setText("");
         notesField.setText("");
         expenseRadio.setSelected(true);
+    }
+    
+    /**
+     * 批量删除选定的交易记录
+     */
+    private void batchDeleteTransactions() {
+        int[] selectedRows = transactionTable.getSelectedRows();
+        if (selectedRows.length == 0) {
+            JOptionPane.showMessageDialog(this, "请选择要删除的交易记录", "错误", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+        
+        // 确认删除
+        int confirm = JOptionPane.showConfirmDialog(this, 
+                "确定要删除选中的 " + selectedRows.length + " 条交易记录吗？", 
+                "确认批量删除", JOptionPane.YES_NO_OPTION);
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
+        
+        try {
+            // 获取所有交易
+            List<Transaction> transactions = transactionService.getAllTransactions();
+            
+            // 按降序排列索引，防止删除时索引变化
+            java.util.Arrays.sort(selectedRows);
+            for (int i = selectedRows.length - 1; i >= 0; i--) {
+                int row = selectedRows[i];
+                if (row < transactions.size()) {
+                    Transaction transaction = transactions.get(row);
+                    transactionService.deleteTransaction(transaction);
+                }
+            }
+            
+            // 重新加载交易
+            loadTransactions();
+            
+            // 显示成功消息
+            JOptionPane.showMessageDialog(this, 
+                    "已成功删除 " + selectedRows.length + " 条交易记录", 
+                    "成功", JOptionPane.INFORMATION_MESSAGE);
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, 
+                    "删除交易记录时出错: " + e.getMessage(), 
+                    "错误", JOptionPane.ERROR_MESSAGE);
+        }
     }
 }

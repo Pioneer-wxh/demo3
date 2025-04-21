@@ -21,6 +21,28 @@ public class Transaction {
         this.date = LocalDate.now();
     }
 
+    /**
+     * Constructor for creating a transaction from imported CSV data.
+     * 
+     * @param id The transaction ID (usually a UUID)
+     * @param date The transaction date
+     * @param amount The transaction amount
+     * @param description The transaction description
+     * @param category The transaction category
+     * @param isExpense Whether the transaction is an expense
+     */
+    public Transaction(String id, LocalDate date, double amount, String description, 
+                      String category, boolean isExpense) {
+        this.id = id;
+        this.date = date;
+        this.amount = amount;
+        this.description = description;
+        this.category = category;
+        this.participant = null; // Not provided in CSV import
+        this.notes = null; // Not provided in CSV import
+        this.isExpense = isExpense;
+    }
+
     public Transaction(LocalDate date, double amount, String description, 
                       String category, String participant, String notes, boolean isExpense) {
         this.id = java.util.UUID.randomUUID().toString();

@@ -1,73 +1,56 @@
 package com.financetracker.ai;
 
-import com.financetracker.model.Transaction;
-import com.financetracker.service.TransactionService;
-
 import java.time.LocalDate;
+import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import com.financetracker.model.Transaction;
+import com.financetracker.service.TransactionService;
+import com.financetracker.ai.CsvDataReader;
+
 /**
- * Service for AI-assisted analysis.
+ * 提供AI辅助分析功能的服务类
  */
 public class AiAssistantService {
     
-    /**
-     * Gets a response to a user query.
-     * 
-     * @param query The user query
-     * @param transactionService The transaction service
-     * @return The AI response
-     */
-    public String getResponse(String query, TransactionService transactionService) {
-        // Normalize query
-        String normalizedQuery = query.toLowerCase().trim();
-        
-        // Get transactions
-        List<Transaction> allTransactions = transactionService.getAllTransactions();
-        List<Transaction> currentMonthTransactions = transactionService.getTransactionsForCurrentMonth();
-        
-        // Check for specific query patterns
-        if (normalizedQuery.contains("save") || normalizedQuery.contains("saving")) {
-            return getSavingAdvice(allTransactions, currentMonthTransactions, transactionService);
-        } else if (normalizedQuery.contains("spend") || normalizedQuery.contains("spending") || normalizedQuery.contains("habit")) {
-            return getSpendingHabitsAnalysis(allTransactions, transactionService);
-        } else if (normalizedQuery.contains("budget") || normalizedQuery.contains("next month")) {
-            return getBudgetAdvice(allTransactions, transactionService);
-        } else if (normalizedQuery.contains("income") || normalizedQuery.contains("earn")) {
-            return getIncomeAnalysis(allTransactions, transactionService);
-        } else if (normalizedQuery.contains("expense") || normalizedQuery.contains("cost")) {
-            return getExpenseAnalysis(allTransactions, transactionService);
-        } else {
-            return getGeneralAdvice(allTransactions, transactionService);
-        }
+    private final SparkAiService sparkAiService;
+    
+    public AiAssistantService() {
+        this.sparkAiService = new SparkAiService();
     }
     
     /**
-     * Gets saving advice.
+     * 获取对用户查询的回应
      * 
-     * @param allTransactions All transactions
-     * @param currentMonthTransactions Current month transactions
-     * @param transactionService The transaction service
-     * @return The saving advice
+     * @param query 用户查询
+     * @param transactionService 交易服务
+     * @return AI的回应
      */
-    private String getSavingAdvice(List<Transaction> allTransactions, List<Transaction> currentMonthTransactions, TransactionService transactionService) {
-        StringBuilder response = new StringBuilder();
-        response.append("Here are some tips to help you save more money:\n\n");
+    public String getResponse(String query, TransactionService transactionService) {
+        // 获取交易数据
+        List<Transaction> allTransactions = transactionService.getAllTransactions();
+        List<Transaction> currentMonthTransactions = transactionService.getTransactionsForCurrentMonth();
         
-        // Calculate current month spending
-        double currentMonthExpense = transactionService.getTotalExpense(currentMonthTransactions);
+        // 构建上下文信息
+        StringBuilder context = new StringBuilder();
+        context.append("以下是当前财务数据的摘要：\n\n");
+        
+        // 添加当前月份的收支情况
         double currentMonthIncome = transactionService.getTotalIncome(currentMonthTransactions);
-        double currentMonthSavings = currentMonthIncome - currentMonthExpense;
-        double savingsRate = currentMonthIncome > 0 ? (currentMonthSavings / currentMonthIncome) * 100 : 0;
+        double currentMonthExpense = transactionService.getTotalExpense(currentMonthTransactions);
+        double currentMonthBalance = currentMonthIncome - currentMonthExpense;
         
-        response.append(String.format("Your current month savings rate is %.1f%% (%.2f out of %.2f income).\n\n", 
-                savingsRate, currentMonthSavings, currentMonthIncome));
+        YearMonth currentMonth = YearMonth.now();
+        context.append(String.format("当前月份(%s)收支：\n", currentMonth.format(DateTimeFormatter.ofPattern("yyyy年MM月"))));
+        context.append(String.format("- 总收入：%.2f\n", currentMonthIncome));
+        context.append(String.format("- 总支出：%.2f\n", currentMonthExpense));
+        context.append(String.format("- 结余：%.2f\n\n", currentMonthBalance));
         
-        // Identify top expense categories
+        // 添加按类别统计
         Map<String, Double> categoryExpenses = new HashMap<>();
         for (Transaction transaction : currentMonthTransactions) {
             if (transaction.isExpense()) {
@@ -77,508 +60,341 @@ public class AiAssistantService {
             }
         }
         
-        // Sort categories by expense amount
+        // 按支出金额排序类别
         List<Map.Entry<String, Double>> sortedCategories = categoryExpenses.entrySet().stream()
                 .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
                 .collect(Collectors.toList());
         
         if (!sortedCategories.isEmpty()) {
-            response.append("Your top expense categories this month:\n");
-            for (int i = 0; i < Math.min(3, sortedCategories.size()); i++) {
-                Map.Entry<String, Double> entry = sortedCategories.get(i);
-                response.append(String.format("%d. %s: %.2f (%.1f%% of expenses)\n", 
-                        i + 1, entry.getKey(), entry.getValue(), (entry.getValue() / currentMonthExpense) * 100));
+            context.append("按类别统计支出：\n");
+            for (Map.Entry<String, Double> entry : sortedCategories) {
+                String category = entry.getKey();
+                double amount = entry.getValue();
+                double percentage = (amount / currentMonthExpense) * 100;
+                context.append(String.format("- %s: %.2f (%.1f%%)\n", category, amount, percentage));
             }
-            response.append("\n");
-            
-            // Provide category-specific advice
-            if (!sortedCategories.isEmpty()) {
-                String topCategory = sortedCategories.get(0).getKey();
-                response.append("Tips for reducing ").append(topCategory).append(" expenses:\n");
-                
-                if (topCategory.equalsIgnoreCase("Food")) {
-                    response.append("- Cook at home more often instead of eating out\n");
-                    response.append("- Plan your meals and make a shopping list to avoid impulse purchases\n");
-                    response.append("- Buy groceries in bulk when on sale\n");
-                } else if (topCategory.equalsIgnoreCase("Entertainment")) {
-                    response.append("- Look for free or low-cost entertainment options\n");
-                    response.append("- Use streaming services instead of cable TV\n");
-                    response.append("- Take advantage of discounts and promotions\n");
-                } else if (topCategory.equalsIgnoreCase("Shopping")) {
-                    response.append("- Wait 24 hours before making non-essential purchases\n");
-                    response.append("- Look for sales and use coupons\n");
-                    response.append("- Consider buying second-hand items\n");
-                } else if (topCategory.equalsIgnoreCase("Transportation")) {
-                    response.append("- Use public transportation when possible\n");
-                    response.append("- Carpool with colleagues or friends\n");
-                    response.append("- Maintain your vehicle to prevent costly repairs\n");
-                } else {
-                    response.append("- Review your spending in this category and identify non-essential expenses\n");
-                    response.append("- Look for more affordable alternatives\n");
-                    response.append("- Set a budget for this category and stick to it\n");
-                }
-                response.append("\n");
-            }
+            context.append("\n");
         }
         
-        // General saving tips
-        response.append("General saving tips:\n");
-        response.append("- Set up automatic transfers to a savings account\n");
-        response.append("- Follow the 50/30/20 rule: 50% for needs, 30% for wants, 20% for savings\n");
-        response.append("- Track your expenses regularly to identify areas for improvement\n");
-        response.append("- Consider using cash for discretionary spending to make it more tangible\n");
-        response.append("- Review and cancel unused subscriptions\n");
+        // 组装用户查询与上下文
+        StringBuilder fullQuery = new StringBuilder();
+        fullQuery.append(context);
+        fullQuery.append("用户的问题是: ").append(query);
+        fullQuery.append("\n\n请根据以上财务数据，对用户的问题提供专业、具体、有帮助的回答。");
         
-        return response.toString();
+        // 调用讯飞星火大模型API
+        return sparkAiService.chat(fullQuery.toString());
     }
     
     /**
-     * Gets spending habits analysis.
+     * 分析单条交易记录，判断其类别和类型
      * 
-     * @param transactions The transactions to analyze
-     * @param transactionService The transaction service
-     * @return The spending habits analysis
+     * @param description 交易描述
+     * @param amount 交易金额
+     * @return 包含类别和交易类型的Map
      */
-    private String getSpendingHabitsAnalysis(List<Transaction> transactions, TransactionService transactionService) {
-        StringBuilder response = new StringBuilder();
-        response.append("Here's an analysis of your spending habits:\n\n");
+    public Map<String, Object> analyzeTransaction(String description, double amount) {
+        Map<String, Object> result = new HashMap<>();
         
-        // Calculate total income and expenses
-        double totalIncome = transactionService.getTotalIncome(transactions);
-        double totalExpense = transactionService.getTotalExpense(transactions);
-        double savingsRate = totalIncome > 0 ? ((totalIncome - totalExpense) / totalIncome) * 100 : 0;
+        // 根据历史交易记录进行分析
+        List<Transaction> allTransactions = CsvDataReader.readAllTransactions();
         
-        response.append(String.format("Overall savings rate: %.1f%%\n", savingsRate));
-        response.append(String.format("Total income: %.2f\n", totalIncome));
-        response.append(String.format("Total expenses: %.2f\n\n", totalExpense));
+        // 默认分类和类型
+        String category = "其他";
+        boolean isExpense = amount > 0;
         
-        // Identify top expense categories
-        Map<String, Double> categoryExpenses = new HashMap<>();
-        for (Transaction transaction : transactions) {
-            if (transaction.isExpense()) {
-                String category = transaction.getCategory();
-                double amount = transaction.getAmount();
-                categoryExpenses.put(category, categoryExpenses.getOrDefault(category, 0.0) + amount);
-            }
+        // 简单的关键词匹配分析
+        String lowerDesc = description.toLowerCase();
+        
+        // 收入判断
+        if (lowerDesc.contains("工资") || lowerDesc.contains("薪水") || lowerDesc.contains("salary")) {
+            category = "工资";
+            isExpense = false;
+        } else if (lowerDesc.contains("奖金") || lowerDesc.contains("bonus")) {
+            category = "奖金";
+            isExpense = false;
+        } else if (lowerDesc.contains("投资") || lowerDesc.contains("股票") || lowerDesc.contains("基金")) {
+            category = "投资收益";
+            isExpense = false;
+        } else if (lowerDesc.contains("退款") || lowerDesc.contains("报销")) {
+            category = "退款";
+            isExpense = false;
+        }
+        // 支出判断
+        else if (lowerDesc.contains("餐") || lowerDesc.contains("饭") || lowerDesc.contains("食品") || lowerDesc.contains("超市")) {
+            category = "餐饮";
+            isExpense = true;
+        } else if (lowerDesc.contains("交通") || lowerDesc.contains("车") || lowerDesc.contains("公交") || lowerDesc.contains("地铁")) {
+            category = "交通";
+            isExpense = true;
+        } else if (lowerDesc.contains("房租") || lowerDesc.contains("水电") || lowerDesc.contains("物业")) {
+            category = "住房";
+            isExpense = true;
+        } else if (lowerDesc.contains("衣") || lowerDesc.contains("服装") || lowerDesc.contains("鞋")) {
+            category = "服装";
+            isExpense = true;
+        } else if (lowerDesc.contains("娱乐") || lowerDesc.contains("电影") || lowerDesc.contains("游戏")) {
+            category = "娱乐";
+            isExpense = true;
         }
         
-        // Sort categories by expense amount
-        List<Map.Entry<String, Double>> sortedCategories = categoryExpenses.entrySet().stream()
-                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
-                .collect(Collectors.toList());
+        result.put("category", category);
+        result.put("isExpense", isExpense);
         
-        if (!sortedCategories.isEmpty()) {
-            response.append("Your top expense categories:\n");
-            for (int i = 0; i < Math.min(5, sortedCategories.size()); i++) {
-                Map.Entry<String, Double> entry = sortedCategories.get(i);
-                response.append(String.format("%d. %s: %.2f (%.1f%% of expenses)\n", 
-                        i + 1, entry.getKey(), entry.getValue(), (entry.getValue() / totalExpense) * 100));
-            }
-            response.append("\n");
-        }
-        
-        // Analyze spending patterns by day of week
-        Map<String, Double> dayOfWeekExpenses = new HashMap<>();
-        Map<String, Integer> dayOfWeekCounts = new HashMap<>();
-        
-        for (Transaction transaction : transactions) {
-            if (transaction.isExpense()) {
-                String dayOfWeek = transaction.getDate().getDayOfWeek().toString();
-                double amount = transaction.getAmount();
-                dayOfWeekExpenses.put(dayOfWeek, dayOfWeekExpenses.getOrDefault(dayOfWeek, 0.0) + amount);
-                dayOfWeekCounts.put(dayOfWeek, dayOfWeekCounts.getOrDefault(dayOfWeek, 0) + 1);
-            }
-        }
-        
-        if (!dayOfWeekExpenses.isEmpty()) {
-            response.append("Spending patterns by day of week:\n");
-            for (Map.Entry<String, Double> entry : dayOfWeekExpenses.entrySet()) {
-                String dayOfWeek = entry.getKey();
-                double totalAmount = entry.getValue();
-                int count = dayOfWeekCounts.get(dayOfWeek);
-                double averageAmount = count > 0 ? totalAmount / count : 0;
-                
-                response.append(String.format("%s: %.2f total, %.2f average per transaction\n", 
-                        dayOfWeek, totalAmount, averageAmount));
-            }
-            response.append("\n");
-        }
-        
-        // Provide insights and recommendations
-        response.append("Insights and recommendations:\n");
-        
-        if (savingsRate < 10) {
-            response.append("- Your savings rate is low. Consider increasing your income or reducing expenses.\n");
-        } else if (savingsRate < 20) {
-            response.append("- Your savings rate is moderate. Aim for at least 20% to build a strong financial foundation.\n");
-        } else {
-            response.append("- Your savings rate is good. Keep up the good work!\n");
-        }
-        
-        if (!sortedCategories.isEmpty()) {
-            String topCategory = sortedCategories.get(0).getKey();
-            double topCategoryPercentage = (sortedCategories.get(0).getValue() / totalExpense) * 100;
-            
-            if (topCategoryPercentage > 40) {
-                response.append(String.format("- Your %s expenses are very high (%.1f%% of total). Consider ways to reduce this.\n", 
-                        topCategory, topCategoryPercentage));
-            } else if (topCategoryPercentage > 30) {
-                response.append(String.format("- Your %s expenses are significant (%.1f%% of total). Look for ways to optimize this category.\n", 
-                        topCategory, topCategoryPercentage));
-            }
-        }
-        
-        response.append("- Track your expenses regularly to maintain awareness of your spending habits.\n");
-        response.append("- Set specific financial goals to stay motivated.\n");
-        response.append("- Consider using budgeting tools or apps to help manage your finances.\n");
-        
-        return response.toString();
+        return result;
     }
     
     /**
-     * Gets budget advice.
+     * 获取当前月份的消费总览
      * 
-     * @param transactions The transactions to analyze
-     * @param transactionService The transaction service
-     * @return The budget advice
+     * @return 消费总览信息
      */
-    private String getBudgetAdvice(List<Transaction> transactions, TransactionService transactionService) {
-        StringBuilder response = new StringBuilder();
-        response.append("Here's a suggested budget for next month based on your spending history:\n\n");
+    public Map<String, Object> getCurrentMonthOverview() {
+        Map<String, Object> overview = new HashMap<>();
         
-        // Calculate average monthly income and expenses
-        LocalDate today = LocalDate.now();
-        LocalDate sixMonthsAgo = today.minusMonths(6);
+        // 获取当前月份的交易记录
+        List<Transaction> currentMonthTransactions = CsvDataReader.getCurrentMonthTransactions();
         
-        List<Transaction> recentTransactions = transactions.stream()
-                .filter(t -> !t.getDate().isBefore(sixMonthsAgo))
-                .collect(Collectors.toList());
+        // 计算总收入和总支出
+        double totalIncome = 0;
+        double totalExpense = 0;
         
-        double totalIncome = transactionService.getTotalIncome(recentTransactions);
-        double totalExpense = transactionService.getTotalExpense(recentTransactions);
-        
-        double monthlyIncome = totalIncome / 6;
-        double monthlyExpense = totalExpense / 6;
-        
-        response.append(String.format("Projected Monthly Income: %.2f\n", monthlyIncome));
-        response.append(String.format("Projected Monthly Expenses: %.2f\n", monthlyExpense));
-        response.append(String.format("Projected Monthly Savings: %.2f\n\n", monthlyIncome - monthlyExpense));
-        
-        // Calculate category distribution
-        Map<String, Double> categoryExpenses = new HashMap<>();
-        for (Transaction transaction : recentTransactions) {
+        for (Transaction transaction : currentMonthTransactions) {
             if (transaction.isExpense()) {
-                String category = transaction.getCategory();
-                double amount = transaction.getAmount();
-                categoryExpenses.put(category, categoryExpenses.getOrDefault(category, 0.0) + amount);
-            }
-        }
-        
-        // Calculate category percentages
-        Map<String, Double> categoryPercentages = new HashMap<>();
-        for (Map.Entry<String, Double> entry : categoryExpenses.entrySet()) {
-            categoryPercentages.put(entry.getKey(), entry.getValue() / totalExpense);
-        }
-        
-        // Generate budget allocation
-        response.append("Suggested Budget Allocation:\n");
-        
-        for (Map.Entry<String, Double> entry : categoryPercentages.entrySet()) {
-            double budgetAmount = monthlyIncome * entry.getValue();
-            response.append(String.format("%s: %.2f (%.1f%% of income)\n", 
-                    entry.getKey(), budgetAmount, entry.getValue() * 100));
-        }
-        
-        response.append("\n");
-        
-        // Provide budgeting tips
-        response.append("Budgeting Tips:\n");
-        response.append("- Use the 50/30/20 rule as a guideline: 50% for needs, 30% for wants, 20% for savings\n");
-        response.append("- Track your expenses regularly to ensure you're staying within budget\n");
-        response.append("- Adjust your budget as needed based on changing circumstances\n");
-        response.append("- Consider using envelope budgeting or separate accounts for different categories\n");
-        response.append("- Build an emergency fund of 3-6 months of expenses\n");
-        response.append("- Review and update your budget at the beginning of each month\n");
-        
-        return response.toString();
-    }
-    
-    /**
-     * Gets income analysis.
-     * 
-     * @param transactions The transactions to analyze
-     * @param transactionService The transaction service
-     * @return The income analysis
-     */
-    private String getIncomeAnalysis(List<Transaction> transactions, TransactionService transactionService) {
-        StringBuilder response = new StringBuilder();
-        response.append("Here's an analysis of your income:\n\n");
-        
-        // Filter income transactions
-        List<Transaction> incomeTransactions = transactions.stream()
-                .filter(t -> !t.isExpense())
-                .collect(Collectors.toList());
-        
-        // Calculate total income
-        double totalIncome = transactionService.getTotalIncome(transactions);
-        
-        response.append(String.format("Total Income: %.2f\n", totalIncome));
-        response.append(String.format("Number of Income Transactions: %d\n", incomeTransactions.size()));
-        
-        if (!incomeTransactions.isEmpty()) {
-            double averageIncome = totalIncome / incomeTransactions.size();
-            response.append(String.format("Average Income per Transaction: %.2f\n\n", averageIncome));
-        }
-        
-        // Analyze income by month
-        Map<String, Double> monthlyIncome = new HashMap<>();
-        
-        for (Transaction transaction : incomeTransactions) {
-            String month = transaction.getDate().format(DateTimeFormatter.ofPattern("yyyy-MM"));
-            double amount = transaction.getAmount();
-            monthlyIncome.put(month, monthlyIncome.getOrDefault(month, 0.0) + amount);
-        }
-        
-        if (!monthlyIncome.isEmpty()) {
-            response.append("Income by Month:\n");
-            
-            List<Map.Entry<String, Double>> sortedMonthlyIncome = monthlyIncome.entrySet().stream()
-                    .sorted(Map.Entry.comparingByKey())
-                    .collect(Collectors.toList());
-            
-            for (Map.Entry<String, Double> entry : sortedMonthlyIncome) {
-                response.append(String.format("%s: %.2f\n", entry.getKey(), entry.getValue()));
-            }
-            
-            response.append("\n");
-        }
-        
-        // Provide income insights and recommendations
-        response.append("Income Insights and Recommendations:\n");
-        
-        if (incomeTransactions.isEmpty()) {
-            response.append("- No income transactions found. Make sure to record all sources of income.\n");
-        } else {
-            // Check income consistency
-            if (monthlyIncome.size() >= 2) {
-                double minIncome = Double.MAX_VALUE;
-                double maxIncome = Double.MIN_VALUE;
-                
-                for (double income : monthlyIncome.values()) {
-                    minIncome = Math.min(minIncome, income);
-                    maxIncome = Math.max(maxIncome, income);
-                }
-                
-                double incomeVariation = (maxIncome - minIncome) / maxIncome;
-                
-                if (incomeVariation > 0.3) {
-                    response.append("- Your income varies significantly from month to month. Consider building a larger emergency fund.\n");
-                } else {
-                    response.append("- Your income is relatively stable. This is good for financial planning.\n");
-                }
-            }
-            
-            // Check income sources
-            Map<String, Double> incomeBySource = new HashMap<>();
-            
-            for (Transaction transaction : incomeTransactions) {
-                String source = transaction.getDescription();
-                double amount = transaction.getAmount();
-                incomeBySource.put(source, incomeBySource.getOrDefault(source, 0.0) + amount);
-            }
-            
-            if (incomeBySource.size() == 1) {
-                response.append("- You have a single source of income. Consider developing multiple income streams for financial security.\n");
+                totalExpense += transaction.getAmount();
             } else {
-                response.append(String.format("- You have %d different income sources. This diversification is good for financial stability.\n", 
-                        incomeBySource.size()));
+                totalIncome += transaction.getAmount();
             }
         }
         
-        response.append("- Consider ways to increase your income, such as asking for a raise, developing new skills, or starting a side business.\n");
-        response.append("- Make sure to save and invest a portion of your income for long-term financial goals.\n");
-        response.append("- Review your tax situation to ensure you're taking advantage of all available deductions and credits.\n");
+        // 计算净收入
+        double netIncome = totalIncome - totalExpense;
         
-        return response.toString();
+        // 设置结果
+        LocalDate now = LocalDate.now();
+        YearMonth yearMonth = YearMonth.of(now.getYear(), now.getMonth());
+        
+        overview.put("year", now.getYear());
+        overview.put("month", now.getMonthValue());
+        overview.put("monthName", now.getMonth().toString());
+        overview.put("daysInMonth", yearMonth.lengthOfMonth());
+        overview.put("currentDay", now.getDayOfMonth());
+        
+        overview.put("totalIncome", totalIncome);
+        overview.put("totalExpense", totalExpense);
+        overview.put("netIncome", netIncome);
+        overview.put("transactionCount", currentMonthTransactions.size());
+        
+        // 计算每个类别的支出
+        Map<String, Double> expenseByCategory = new HashMap<>();
+        for (Transaction transaction : currentMonthTransactions) {
+            if (transaction.isExpense()) {
+                String category = transaction.getCategory();
+                double currentAmount = expenseByCategory.getOrDefault(category, 0.0);
+                expenseByCategory.put(category, currentAmount + transaction.getAmount());
+            }
+        }
+        
+        overview.put("expenseByCategory", expenseByCategory);
+        
+        return overview;
     }
     
     /**
-     * Gets expense analysis.
+     * 提供基础的财务建议
      * 
-     * @param transactions The transactions to analyze
-     * @param transactionService The transaction service
-     * @return The expense analysis
+     * @return 财务建议信息
      */
-    private String getExpenseAnalysis(List<Transaction> transactions, TransactionService transactionService) {
-        StringBuilder response = new StringBuilder();
-        response.append("Here's an analysis of your expenses:\n\n");
+    public Map<String, Object> getFinancialAdvice() {
+        Map<String, Object> advice = new HashMap<>();
         
-        // Filter expense transactions
-        List<Transaction> expenseTransactions = transactions.stream()
-                .filter(Transaction::isExpense)
-                .collect(Collectors.toList());
+        // 获取当前月份概览
+        Map<String, Object> overview = getCurrentMonthOverview();
+        double totalIncome = (double) overview.get("totalIncome");
+        double totalExpense = (double) overview.get("totalExpense");
+        double netIncome = (double) overview.get("netIncome");
         
-        // Calculate total expenses
-        double totalExpense = transactionService.getTotalExpense(transactions);
+        // 计算支出占收入的比例
+        double expenseRatio = totalIncome > 0 ? (totalExpense / totalIncome) * 100 : 0;
         
-        response.append(String.format("Total Expenses: %.2f\n", totalExpense));
-        response.append(String.format("Number of Expense Transactions: %d\n", expenseTransactions.size()));
-        
-        if (!expenseTransactions.isEmpty()) {
-            double averageExpense = totalExpense / expenseTransactions.size();
-            response.append(String.format("Average Expense per Transaction: %.2f\n\n", averageExpense));
+        // 基于支出比例的建议
+        String budgetAdvice;
+        if (expenseRatio > 90) {
+            budgetAdvice = "您的支出占收入的比例过高，建议控制支出，避免财务压力。";
+        } else if (expenseRatio > 70) {
+            budgetAdvice = "您的支出占收入的比例偏高，可以考虑适当减少一些非必要支出。";
+        } else if (expenseRatio > 50) {
+            budgetAdvice = "您的支出占收入的比例适中，请继续保持良好的财务习惯。";
+        } else {
+            budgetAdvice = "您的支出占收入的比例较低，有较好的储蓄能力，可以考虑进行一些投资。";
         }
         
-        // Analyze expenses by category
-        Map<String, Double> categoryExpenses = new HashMap<>();
+        advice.put("expenseRatio", expenseRatio);
+        advice.put("budgetAdvice", budgetAdvice);
         
-        for (Transaction transaction : expenseTransactions) {
+        // 添加类别建议
+        @SuppressWarnings("unchecked")
+        Map<String, Double> expenseByCategory = (Map<String, Double>) overview.get("expenseByCategory");
+        if (expenseByCategory != null) {
+            // 找出支出最高的类别
+            String highestCategory = "";
+            double highestAmount = 0;
+            
+            for (Map.Entry<String, Double> entry : expenseByCategory.entrySet()) {
+                if (entry.getValue() > highestAmount) {
+                    highestAmount = entry.getValue();
+                    highestCategory = entry.getKey();
+                }
+            }
+            
+            if (!highestCategory.isEmpty()) {
+                String categoryAdvice = "您在 " + highestCategory + " 类别的支出最高，占总支出的 " 
+                    + String.format("%.2f", (highestAmount / totalExpense) * 100) + "%。";
+                
+                if (highestAmount / totalExpense > 0.5) {
+                    categoryAdvice += "建议关注这一类别的支出，可能有节省空间。";
+                }
+                
+                advice.put("highestCategory", highestCategory);
+                advice.put("highestCategoryAmount", highestAmount);
+                advice.put("categoryAdvice", categoryAdvice);
+            }
+        }
+        
+        return advice;
+    }
+    
+    /**
+     * 检查服务是否可用
+     * 
+     * @return 服务状态
+     */
+    public boolean isServiceAvailable() {
+        // 检查CSV数据库文件是否存在
+        return CsvDataReader.databaseExists();
+    }
+    
+    /**
+     * 分析当前月份交易并生成报告
+     * 
+     * @param transactionService 交易服务
+     * @return 分析报告文本
+     */
+    public String generateCurrentMonthAnalysis(TransactionService transactionService) {
+        List<Transaction> currentMonthTransactions = transactionService.getTransactionsForCurrentMonth();
+        
+        // 准备数据
+        StringBuilder data = new StringBuilder();
+        YearMonth currentMonth = YearMonth.now();
+        double totalIncome = transactionService.getTotalIncome(currentMonthTransactions);
+        double totalExpense = transactionService.getTotalExpense(currentMonthTransactions);
+        
+        data.append(String.format("当前月份：%s\n", currentMonth.format(DateTimeFormatter.ofPattern("yyyy年MM月"))));
+        data.append(String.format("总收入：%.2f\n", totalIncome));
+        data.append(String.format("总支出：%.2f\n", totalExpense));
+        data.append(String.format("结余：%.2f\n\n", totalIncome - totalExpense));
+        
+        // 按类别统计支出
+        Map<String, Double> categoryExpenses = new HashMap<>();
+        for (Transaction transaction : currentMonthTransactions) {
+            if (transaction.isExpense()) {
             String category = transaction.getCategory();
             double amount = transaction.getAmount();
             categoryExpenses.put(category, categoryExpenses.getOrDefault(category, 0.0) + amount);
         }
+        }
         
-        if (!categoryExpenses.isEmpty()) {
-            response.append("Expenses by Category:\n");
-            
-            List<Map.Entry<String, Double>> sortedCategoryExpenses = categoryExpenses.entrySet().stream()
-                    .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+        // 按支出金额排序类别
+        List<Map.Entry<String, Double>> sortedExpenses = categoryExpenses.entrySet().stream()
+                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .collect(Collectors.toList());
+        
+        if (!sortedExpenses.isEmpty()) {
+            data.append("支出类别统计：\n");
+            for (Map.Entry<String, Double> entry : sortedExpenses) {
+                data.append(String.format("- %s: %.2f (%.1f%%)\n", 
+                        entry.getKey(), entry.getValue(), entry.getValue() / totalExpense * 100));
+            }
+            data.append("\n");
+        }
+        
+        // 按类别统计收入
+        Map<String, Double> categoryIncomes = new HashMap<>();
+        for (Transaction transaction : currentMonthTransactions) {
+            if (!transaction.isExpense()) {
+                String category = transaction.getCategory();
+                double amount = transaction.getAmount();
+                categoryIncomes.put(category, categoryIncomes.getOrDefault(category, 0.0) + amount);
+            }
+        }
+        
+        // 按收入金额排序类别
+        List<Map.Entry<String, Double>> sortedIncomes = categoryIncomes.entrySet().stream()
+                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
                     .collect(Collectors.toList());
             
-            for (Map.Entry<String, Double> entry : sortedCategoryExpenses) {
-                response.append(String.format("%s: %.2f (%.1f%%)\n", 
-                        entry.getKey(), entry.getValue(), (entry.getValue() / totalExpense) * 100));
+        if (!sortedIncomes.isEmpty()) {
+            data.append("收入来源统计：\n");
+            for (Map.Entry<String, Double> entry : sortedIncomes) {
+                data.append(String.format("- %s: %.2f (%.1f%%)\n", 
+                        entry.getKey(), entry.getValue(), entry.getValue() / totalIncome * 100));
             }
-            
-            response.append("\n");
+            data.append("\n");
         }
         
-        // Analyze expenses by month
-        Map<String, Double> monthlyExpenses = new HashMap<>();
-        
-        for (Transaction transaction : expenseTransactions) {
-            String month = transaction.getDate().format(DateTimeFormatter.ofPattern("yyyy-MM"));
-            double amount = transaction.getAmount();
-            monthlyExpenses.put(month, monthlyExpenses.getOrDefault(month, 0.0) + amount);
-        }
-        
-        if (!monthlyExpenses.isEmpty()) {
-            response.append("Expenses by Month:\n");
-            
-            List<Map.Entry<String, Double>> sortedMonthlyExpenses = monthlyExpenses.entrySet().stream()
-                    .sorted(Map.Entry.comparingByKey())
-                    .collect(Collectors.toList());
-            
-            for (Map.Entry<String, Double> entry : sortedMonthlyExpenses) {
-                response.append(String.format("%s: %.2f\n", entry.getKey(), entry.getValue()));
-            }
-            
-            response.append("\n");
-        }
-        
-        // Provide expense insights and recommendations
-        response.append("Expense Insights and Recommendations:\n");
-        
-        if (!categoryExpenses.isEmpty()) {
-            // Identify top expense category
-            Map.Entry<String, Double> topCategory = categoryExpenses.entrySet().stream()
-                    .max(Map.Entry.comparingByValue())
-                    .orElse(null);
-            
-            if (topCategory != null) {
-                double topCategoryPercentage = (topCategory.getValue() / totalExpense) * 100;
-                
-                response.append(String.format("- Your highest expense category is %s (%.1f%% of total expenses).\n", 
-                        topCategory.getKey(), topCategoryPercentage));
-                
-                if (topCategoryPercentage > 40) {
-                    response.append("  This category dominates your expenses. Look for ways to reduce spending in this area.\n");
-                }
-            }
-        }
-        
-        if (!monthlyExpenses.isEmpty() && monthlyExpenses.size() >= 2) {
-            // Check for expense trends
-            List<Map.Entry<String, Double>> sortedMonthlyExpenses = monthlyExpenses.entrySet().stream()
-                    .sorted(Map.Entry.comparingByKey())
-                    .collect(Collectors.toList());
-            
-            if (sortedMonthlyExpenses.size() >= 2) {
-                double firstMonthExpense = sortedMonthlyExpenses.get(0).getValue();
-                double lastMonthExpense = sortedMonthlyExpenses.get(sortedMonthlyExpenses.size() - 1).getValue();
-                
-                double expenseChange = (lastMonthExpense - firstMonthExpense) / firstMonthExpense * 100;
-                
-                if (expenseChange > 10) {
-                    response.append(String.format("- Your expenses have increased by %.1f%% from %s to %s. Review your spending habits.\n", 
-                            expenseChange, sortedMonthlyExpenses.get(0).getKey(), sortedMonthlyExpenses.get(sortedMonthlyExpenses.size() - 1).getKey()));
-                } else if (expenseChange < -10) {
-                    response.append(String.format("- Your expenses have decreased by %.1f%% from %s to %s. Good job!\n", 
-                            -expenseChange, sortedMonthlyExpenses.get(0).getKey(), sortedMonthlyExpenses.get(sortedMonthlyExpenses.size() - 1).getKey()));
-                } else {
-                    response.append("- Your expenses have been relatively stable over time.\n");
-                }
-            }
-        }
-        
-        response.append("- Review your recurring expenses and subscriptions to identify potential savings.\n");
-        response.append("- Consider using cash for discretionary spending to make it more tangible.\n");
-        response.append("- Set specific spending limits for each category and track your progress.\n");
-        response.append("- Look for ways to reduce expenses in your top spending categories.\n");
-        
-        return response.toString();
+        // 使用星火大模型生成分析报告
+        return sparkAiService.generateMonthlyAnalysisReport(data.toString());
     }
     
     /**
-     * Gets general advice.
+     * 基于历史数据预测下个月预算
      * 
-     * @param transactions The transactions to analyze
-     * @param transactionService The transaction service
-     * @return The general advice
+     * @param transactionService 交易服务
+     * @return 预算建议文本
      */
-    private String getGeneralAdvice(List<Transaction> transactions, TransactionService transactionService) {
-        StringBuilder response = new StringBuilder();
-        response.append("Here's a general financial analysis and advice based on your transaction history:\n\n");
+    public String generateNextMonthBudget(TransactionService transactionService) {
+        List<Transaction> allTransactions = transactionService.getAllTransactions();
+        List<Transaction> currentMonthTransactions = transactionService.getTransactionsForCurrentMonth();
         
-        // Calculate total income and expenses
-        double totalIncome = transactionService.getTotalIncome(transactions);
-        double totalExpense = transactionService.getTotalExpense(transactions);
-        double netAmount = totalIncome - totalExpense;
-        double savingsRate = totalIncome > 0 ? (netAmount / totalIncome) * 100 : 0;
+        // 准备数据
+        StringBuilder data = new StringBuilder();
+        YearMonth currentMonth = YearMonth.now();
+        YearMonth nextMonth = currentMonth.plusMonths(1);
         
-        response.append(String.format("Total Income: %.2f\n", totalIncome));
-        response.append(String.format("Total Expenses: %.2f\n", totalExpense));
-        response.append(String.format("Net Amount: %.2f\n", netAmount));
-        response.append(String.format("Savings Rate: %.1f%%\n\n", savingsRate));
+        double totalIncome = transactionService.getTotalIncome(currentMonthTransactions);
+        double totalExpense = transactionService.getTotalExpense(currentMonthTransactions);
         
-        // Provide financial health assessment
-        response.append("Financial Health Assessment:\n");
+        data.append(String.format("当前月份：%s\n", currentMonth.format(DateTimeFormatter.ofPattern("yyyy年MM月"))));
+        data.append(String.format("下个月：%s\n", nextMonth.format(DateTimeFormatter.ofPattern("yyyy年MM月"))));
+        data.append(String.format("总收入：%.2f\n", totalIncome));
+        data.append(String.format("总支出：%.2f\n", totalExpense));
+        data.append(String.format("结余：%.2f\n\n", totalIncome - totalExpense));
         
-        if (savingsRate < 0) {
-            response.append("- You're spending more than you earn. This is not sustainable in the long term.\n");
-            response.append("- Focus on increasing income or reducing expenses to achieve a positive savings rate.\n");
-        } else if (savingsRate < 10) {
-            response.append("- Your savings rate is low. Aim to save at least 10-15% of your income.\n");
-            response.append("- Look for ways to reduce expenses or increase income to improve your savings rate.\n");
-        } else if (savingsRate < 20) {
-            response.append("- Your savings rate is moderate. This is a good start, but aim for 20% or more for long-term financial security.\n");
-            response.append("- Continue to look for ways to optimize your spending and increase your income.\n");
-        } else {
-            response.append("- Your savings rate is good. Keep up the good work!\n");
-            response.append("- Consider investing your savings for long-term growth.\n");
+        // 按类别统计支出
+        Map<String, Double> categoryExpenses = new HashMap<>();
+        for (Transaction transaction : currentMonthTransactions) {
+            if (transaction.isExpense()) {
+                String category = transaction.getCategory();
+                double amount = transaction.getAmount();
+                categoryExpenses.put(category, categoryExpenses.getOrDefault(category, 0.0) + amount);
+            }
         }
         
-        // Provide general financial advice
-        response.append("\nGeneral Financial Advice:\n");
-        response.append("- Build an emergency fund of 3-6 months of expenses.\n");
-        response.append("- Pay off high-interest debt as quickly as possible.\n");
-        response.append("- Save for retirement by contributing to retirement accounts.\n");
-        response.append("- Invest in a diversified portfolio for long-term growth.\n");
-        response.append("- Review your insurance coverage to ensure you're adequately protected.\n");
-        response.append("- Set specific financial goals and track your progress.\n");
-        response.append("- Regularly review and update your budget.\n");
-        response.append("- Consider working with a financial advisor for personalized advice.\n");
+        // 按支出金额排序类别
+        List<Map.Entry<String, Double>> sortedExpenses = categoryExpenses.entrySet().stream()
+                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .collect(Collectors.toList());
         
-        return response.toString();
+        if (!sortedExpenses.isEmpty()) {
+            data.append("本月支出类别统计：\n");
+            for (Map.Entry<String, Double> entry : sortedExpenses) {
+                data.append(String.format("- %s: %.2f (%.1f%%)\n", 
+                        entry.getKey(), entry.getValue(), entry.getValue() / totalExpense * 100));
+            }
+            data.append("\n");
+        }
+        
+        // 使用星火大模型生成下月预算建议
+        return sparkAiService.generateBudgetSuggestions(data.toString());
     }
 }
