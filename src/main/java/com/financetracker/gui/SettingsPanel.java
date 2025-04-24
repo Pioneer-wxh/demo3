@@ -1,17 +1,36 @@
 package com.financetracker.gui;
 
-import com.financetracker.model.Settings;
-import com.financetracker.model.SpecialDate;
-import com.financetracker.service.SettingsService;
-import com.financetracker.service.SpecialDateService;
-
-import javax.swing.*;
-import javax.swing.table.DefaultTableModel;
-import java.awt.*;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.JButton;
+import javax.swing.JLabel;
+import javax.swing.JOptionPane;
+import javax.swing.JPanel;
+import javax.swing.JScrollPane;
+import javax.swing.JSpinner;
+import javax.swing.JTable;
+import javax.swing.JTextField;
+import javax.swing.ListSelectionModel;
+import javax.swing.SpinnerNumberModel;
+import javax.swing.table.DefaultTableModel;
+
+import com.financetracker.model.Settings;
+import com.financetracker.model.SpecialDate;
+import com.financetracker.service.SettingsService;
+import com.financetracker.service.SpecialDateService;
 
 /**
  * Panel for managing application settings.
@@ -450,7 +469,7 @@ public class SettingsPanel extends JPanel {
                 specialDate.getName(),
                 specialDate.getDate().format(DateTimeFormatter.ISO_LOCAL_DATE),
                 specialDate.getDescription(),
-                specialDate.getAffectedCategories(),
+                specialDate.getAffectedCategoriesAsString(),
                 specialDate.getExpectedImpact()
             };
             specialDatesTableModel.addRow(row);
@@ -517,7 +536,7 @@ public class SettingsPanel extends JPanel {
             specialDateNameField.setText(specialDate.getName());
             specialDateField.setText(specialDate.getDate().format(DateTimeFormatter.ISO_LOCAL_DATE));
             specialDateDescriptionField.setText(specialDate.getDescription());
-            specialDateCategoriesField.setText(specialDate.getAffectedCategories());
+            specialDateCategoriesField.setText(specialDate.getAffectedCategoriesAsString());
             specialDateImpactField.setText(String.valueOf(specialDate.getExpectedImpact()));
             
             // Delete the special date (will be replaced when user clicks Add)
@@ -633,7 +652,8 @@ public class SettingsPanel extends JPanel {
             settings.setDefaultCategories(categories);
             
             // Save settings
-            settingsService.saveSettings(settings);
+            settingsService.getSettings().setDefaultCategories(categories);
+            settingsService.saveSettings();
             
             // Clear form
             newCategoryField.setText("");
@@ -660,7 +680,8 @@ public class SettingsPanel extends JPanel {
         }
         
         // Reset settings
-        Settings settings = settingsService.resetToDefault();
+        settingsService.resetToDefault();
+        Settings settings = settingsService.getSettings();
         
         // Update main frame
         mainFrame.setSettings(settings);
@@ -685,7 +706,8 @@ public class SettingsPanel extends JPanel {
             settings.setMonthStartDay(monthStartDay);
             
             // Save settings
-            settingsService.saveSettings(settings);
+            settingsService.getSettings().setMonthStartDay(monthStartDay);
+            settingsService.saveSettings();
             
             // Update main frame
             mainFrame.setSettings(settings);

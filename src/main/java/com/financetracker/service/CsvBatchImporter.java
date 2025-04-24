@@ -1,327 +1,323 @@
 package com.financetracker.service;
+// 定义代码所属的包名，表示该类位于 com.financetracker.service 包下，用于组织和管理类
 
+import java.io.BufferedReader;
 import java.io.File;
-import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.io.FileReader;
+import java.io.FilenameFilter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+// 导入 Stream 类，用于处理数据流操作
 
 /**
- * 批量CSV文件导入工具类
- * 用于导入指定目录下的所有CSV文件
+ * CsvBatchImporter是一个批量导入CSV文件的工具类。
+ * 主要功能：
+ * 1. 批量扫描并导入指定目录下的所有CSV文件
+ * 2. 自动检测CSV文件的列结构（日期、金额、描述等）
+ * 3. 自动判断交易类型（收入或支出）
+ * 4. 智能识别日期格式并进行解析
+ * 5. 详细的导入结果统计和报告
+ * 
+ * 内部包含两个重要的辅助类：
+ * - CsvHeaderDetector：负责智能检测CSV文件的列结构和格式
+ * - ImportResult：记录导入结果的统计信息
  */
+// 类注释：说明 CsvBatchImporter 是一个批量导入 CSV 文件的工具类
+// 列出主要功能，包括扫描导入、列结构检测、交易类型判断、日期格式识别和结果统计
+// 提到两个辅助类：CsvHeaderDetector 和 ImportResult
+
 public class CsvBatchImporter {
-    
+    // 定义 CsvBatchImporter 类，用于批量导入 CSV 文件中的交易记录
+
     private TransactionService transactionService;
-    
+    // 定义类成员变量 transactionService，类型为 TransactionService，用于处理交易记录的业务逻辑
+
     public CsvBatchImporter(TransactionService transactionService) {
+        // 定义构造函数，接收 TransactionService 实例
         this.transactionService = transactionService;
+        // 将传入的 transactionService 赋值给类成员变量
     }
-    
+
     /**
-     * 导入指定目录下的所有CSV文件
+     * 批量导入CSV文件
+     * 
+     * @param files 要导入的文件数组
+     * @return 导入结果
+     */
+    public ImportResult importCsvFiles(File[] files) {
+        ImportResult result = new ImportResult();
+
+        for (File file : files) {
+            if (!file.exists() || !file.isFile() || !file.getName().toLowerCase().endsWith(".csv")) {
+                result.failedFileCount++;
+                continue;
+            }
+
+            try {
+                // 检测CSV头信息
+                List<String> headers = readCsvHeaders(file.getAbsolutePath());
+                if (headers == null || headers.isEmpty()) {
+                    result.failedFileCount++;
+                    continue;
+                }
+
+                // 自动检测列映射
+                String[] columnMappings = autoDetectColumns(file.getAbsolutePath(), headers);
+
+                if (columnMappings[0] == null || columnMappings[1] == null || columnMappings[2] == null) {
+                    // 缺少必要的列
+                    result.failedFileCount++;
+                    continue;
+                }
+
+                // 执行导入
+                int importedCount = transactionService.importFromCsv(
+                        file.getAbsolutePath(),
+                        columnMappings[0], // 日期列
+                        columnMappings[1], // 金额列
+                        columnMappings[2], // 描述列
+                        columnMappings[3], // 类别列，可能为null
+                        columnMappings[4], // 日期格式
+                        false // isExpense参数已被忽略，由系统自动检测
+                );
+
+                if (importedCount > 0) {
+                    result.successFileCount++;
+                    result.totalRecordCount += importedCount;
+                } else {
+                    result.failedFileCount++;
+                }
+            } catch (Exception e) {
+                result.failedFileCount++;
+                e.printStackTrace();
+            }
+        }
+
+        return result;
+    }
+
+    /**
+     * 从目录导入CSV文件
      * 
      * @param directoryPath 目录路径
-     * @return 导入结果，包含成功导入的文件数量和记录数量
+     * @return 导入结果
      */
-    public ImportResult importAllCsvFiles(String directoryPath) {
-        ImportResult result = new ImportResult();
-        Path dir = Paths.get(directoryPath);
-        
-        if (!Files.exists(dir) || !Files.isDirectory(dir)) {
-            System.err.println("指定的路径不存在或不是目录: " + directoryPath);
+    public ImportResult importFromDirectory(String directoryPath) {
+        File dir = new File(directoryPath);
+        if (!dir.exists() || !dir.isDirectory()) {
+            ImportResult result = new ImportResult();
+            result.failedFileCount = 1;
             return result;
         }
-        
-        List<Path> csvFiles = findCsvFiles(dir);
-        System.out.println("在目录 " + directoryPath + " 中找到 " + csvFiles.size() + " 个CSV文件");
-        
-        for (Path csvFile : csvFiles) {
-            try {
-                System.out.println("开始处理文件: " + csvFile.toString());
-                int importedCount = importSingleCsvFile(csvFile.toString());
-                
-                if (importedCount > 0) {
-                    result.setSuccessFileCount(result.getSuccessFileCount() + 1);
-                    result.setTotalRecordCount(result.getTotalRecordCount() + importedCount);
-                    System.out.println("成功从文件 " + csvFile.getFileName() + " 导入 " + importedCount + " 条记录");
-                } else {
-                    result.setFailedFileCount(result.getFailedFileCount() + 1);
-                    System.out.println("文件 " + csvFile.getFileName() + " 导入失败或无记录");
-                }
-            } catch (Exception e) {
-                result.setFailedFileCount(result.getFailedFileCount() + 1);
-                System.err.println("处理文件 " + csvFile.toString() + " 时出错: " + e.getMessage());
-                e.printStackTrace();
+
+        // 获取目录中的所有CSV文件
+        File[] csvFiles = dir.listFiles(new FilenameFilter() {
+            @Override
+            public boolean accept(File dir, String name) {
+                return name.toLowerCase().endsWith(".csv");
             }
+        });
+
+        if (csvFiles == null || csvFiles.length == 0) {
+            ImportResult result = new ImportResult();
+            return result;
         }
-        
-        return result;
+
+        // 执行批量导入
+        return importCsvFiles(csvFiles);
     }
-    
+
     /**
-     * 查找指定目录下的所有CSV文件
+     * 读取CSV文件头
      * 
-     * @param directory 目录路径
-     * @return CSV文件列表
+     * @param filePath 文件路径
+     * @return 列标题列表
      */
-    private List<Path> findCsvFiles(Path directory) {
-        List<Path> result = new ArrayList<>();
-        
-        try (Stream<Path> paths = Files.walk(directory)) {
-            result = paths
-                .filter(Files::isRegularFile)
-                .filter(path -> path.toString().toLowerCase().endsWith(".csv"))
-                .collect(Collectors.toList());
-        } catch (IOException e) {
-            System.err.println("查找CSV文件时出错: " + e.getMessage());
-            e.printStackTrace();
-        }
-        
-        return result;
-    }
-    
-    /**
-     * 导入单个CSV文件
-     * 自动检测CSV文件的列结构
-     * 
-     * @param filePath CSV文件路径
-     * @return 导入的记录数量
-     */
-    private int importSingleCsvFile(String filePath) {
-        try {
-            // 使用CsvHeaderDetector检测CSV文件的列结构
-            CsvHeaderDetector detector = new CsvHeaderDetector(filePath);
-            detector.detect();
-            
-            // 根据检测结果导入CSV文件
-            if (detector.isValid()) {
-                return transactionService.importFromCsv(
-                    filePath,
-                    detector.getDateColumn(),
-                    detector.getAmountColumn(),
-                    detector.getDescriptionColumn(),
-                    detector.getCategoryColumn(),
-                    detector.getDateFormat(),
-                    detector.isExpense()
-                );
-            } else {
-                System.err.println("CSV文件 " + filePath + " 格式无效，无法检测到必要的列");
-                return 0;
+    private List<String> readCsvHeaders(String filePath) {
+        List<String> headers = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+            String headerLine = reader.readLine();
+            if (headerLine != null) {
+                // 根据常见的CSV分隔符拆分标题行
+                String separator = headerLine.contains(",") ? "," : ";";
+                String[] headerArray = headerLine.split(separator);
+
+                for (String header : headerArray) {
+                    headers.add(header.trim());
+                }
             }
         } catch (Exception e) {
-            System.err.println("导入文件 " + filePath + " 时出错: " + e.getMessage());
             e.printStackTrace();
-            return 0;
+            return null;
         }
+        return headers;
     }
-    
+
     /**
-     * CSV文件列结构检测器
-     * 用于自动检测CSV文件的列结构
+     * 自动检测列映射
+     * 
+     * @param filePath 文件路径
+     * @param headers  列标题
+     * @return 自动识别的列映射数组 [日期列,金额列,描述列,类别列,日期格式]
      */
-    public static class CsvHeaderDetector {
-        private String filePath;
-        private String dateColumn;
-        private String amountColumn;
-        private String descriptionColumn;
-        private String categoryColumn;
-        private String dateFormat = "yyyy-MM-dd";
-        private boolean expense = true;
-        private boolean valid = false;
-        
-        public CsvHeaderDetector(String filePath) {
-            this.filePath = filePath;
-        }
-        
-        /**
-         * 检测CSV文件的列结构
-         */
-        public void detect() {
-            try {
-                List<String> headers = readCsvHeaders(filePath);
-                if (headers.isEmpty()) {
-                    System.err.println("CSV文件 " + filePath + " 没有标题行");
-                    return;
-                }
-                
-                // 自动检测列
-                dateColumn = findColumnByKeywords(headers, new String[]{"date", "日期", "时间", "day", "time"});
-                amountColumn = findColumnByKeywords(headers, new String[]{"amount", "金额", "数额", "价格", "sum", "value", "price"});
-                descriptionColumn = findColumnByKeywords(headers, new String[]{"description", "desc", "名称", "描述", "备注", "摘要", "memo", "note"});
-                categoryColumn = findColumnByKeywords(headers, new String[]{"category", "类别", "分类", "type", "类型", "group"});
-                
-                // 检测是否有足够的列信息
-                valid = dateColumn != null && amountColumn != null && (descriptionColumn != null || categoryColumn != null);
-                
-                // 如果文件名包含"收入"、"income"等关键词，默认为收入
-                String fileName = new File(filePath).getName().toLowerCase();
-                if (fileName.contains("收入") || fileName.contains("income") || fileName.contains("revenue")) {
-                    expense = false;
-                }
-                
-                // 检测日期格式（如果有日期列）
-                if (dateColumn != null) {
-                    String sampleDate = readFirstDateValue(filePath, dateColumn);
-                    if (sampleDate != null && !sampleDate.isEmpty()) {
-                        dateFormat = guessDateFormat(sampleDate);
-                    }
-                }
-                
-                System.out.println("CSV文件 " + filePath + " 检测结果:");
-                System.out.println("日期列: " + dateColumn);
-                System.out.println("金额列: " + amountColumn);
-                System.out.println("描述列: " + descriptionColumn);
-                System.out.println("类别列: " + categoryColumn);
-                System.out.println("日期格式: " + dateFormat);
-                System.out.println("交易类型: " + (expense ? "支出" : "收入"));
-                System.out.println("有效性: " + valid);
-            } catch (Exception e) {
-                System.err.println("检测CSV文件 " + filePath + " 时出错: " + e.getMessage());
-                e.printStackTrace();
-                valid = false;
-            }
-        }
-        
-        /**
-         * 读取CSV文件的标题行
-         */
-        private List<String> readCsvHeaders(String filePath) {
-            List<String> headers = new ArrayList<>();
-            
-            try {
-                List<String> allLines = Files.readAllLines(Paths.get(filePath));
-                if (!allLines.isEmpty()) {
-                    String headerLine = allLines.get(0);
-                    String separator = headerLine.contains(",") ? "," : 
-                                      (headerLine.contains(";") ? ";" : "\t");
-                    
-                    String[] parts = headerLine.split(separator);
-                    for (String part : parts) {
-                        headers.add(part.trim());
-                    }
-                }
-            } catch (IOException e) {
-                System.err.println("读取CSV文件标题行时出错: " + e.getMessage());
-                e.printStackTrace();
-            }
-            
-            return headers;
-        }
-        
-        /**
-         * 读取CSV文件的第一个日期值
-         */
-        private String readFirstDateValue(String filePath, String dateColumn) {
-            try {
-                List<String> allLines = Files.readAllLines(Paths.get(filePath));
-                if (allLines.size() > 1) {
-                    String headerLine = allLines.get(0);
-                    String dataLine = allLines.get(1);
-                    
-                    String separator = headerLine.contains(",") ? "," : 
-                                      (headerLine.contains(";") ? ";" : "\t");
-                    
-                    String[] headers = headerLine.split(separator);
-                    String[] values = dataLine.split(separator);
-                    
-                    for (int i = 0; i < headers.length && i < values.length; i++) {
-                        if (headers[i].trim().equalsIgnoreCase(dateColumn)) {
-                            return values[i].trim();
-                        }
-                    }
-                }
-            } catch (IOException e) {
-                System.err.println("读取CSV文件第一个日期值时出错: " + e.getMessage());
-            }
-            
-            return null;
-        }
-        
-        /**
-         * 根据关键词在标题列表中查找列名
-         */
-        private String findColumnByKeywords(List<String> headers, String[] keywords) {
-            // 精确匹配
-            for (String header : headers) {
-                String lower = header.toLowerCase();
-                for (String keyword : keywords) {
-                    if (lower.equals(keyword.toLowerCase())) {
-                        return header;
-                    }
+    private String[] autoDetectColumns(String filePath, List<String> headers) {
+        // 常见日期列名映射
+        String[] dateKeywords = { "date", "time", "day", "日期", "时间", "transaction date" };
+        // 常见金额列名映射
+        String[] amountKeywords = { "amount", "sum", "value", "price", "金额", "数额", "价格", "transaction amount" };
+        // 常见描述列名映射
+        String[] descKeywords = { "description", "desc", "note", "memo", "名称", "描述", "备注", "摘要",
+                "transaction description" };
+        // 常见类别列名映射
+        String[] categoryKeywords = { "category", "type", "group", "类别", "类型", "分类" };
+
+        // 查找最匹配的列
+        int dateIndex = findBestMatch(headers, dateKeywords);
+        int amountIndex = findBestMatch(headers, amountKeywords);
+        int descIndex = findBestMatch(headers, descKeywords);
+        int categoryIndex = findBestMatch(headers, categoryKeywords);
+
+        // 如果找不到必要的列，尝试使用索引位置
+        if (dateIndex < 0 && headers.size() > 0)
+            dateIndex = 0;
+        if (amountIndex < 0 && headers.size() > 1)
+            amountIndex = 1;
+        if (descIndex < 0 && headers.size() > 2)
+            descIndex = 2;
+
+        // 确定日期格式
+        String dateFormat = "yyyy-MM-dd"; // 默认格式
+        try (BufferedReader reader = new BufferedReader(new FileReader(filePath))) {
+            // 跳过标题行
+            reader.readLine();
+
+            // 读取第一个数据行
+            String dataLine = reader.readLine();
+            if (dataLine != null && dateIndex >= 0) {
+                String[] values = dataLine.split(dataLine.contains(",") ? "," : ";");
+                if (values.length > dateIndex) {
+                    String dateValue = values[dateIndex].trim();
+                    dateFormat = guessDateFormat(dateValue);
                 }
             }
-            
-            // 部分匹配
-            for (String header : headers) {
-                String lower = header.toLowerCase();
-                for (String keyword : keywords) {
-                    if (lower.contains(keyword.toLowerCase()) || 
-                        keyword.toLowerCase().contains(lower)) {
-                        return header;
-                    }
-                }
-            }
-            
-            return null;
+        } catch (Exception e) {
+            // 忽略错误，使用默认日期格式
         }
-        
-        /**
-         * 根据日期字符串猜测日期格式
-         */
-        private String guessDateFormat(String dateStr) {
-            String[][] formats = {
-                {"yyyy-MM-dd", "\\d{4}-\\d{1,2}-\\d{1,2}"},
-                {"MM/dd/yyyy", "\\d{1,2}/\\d{1,2}/\\d{4}"},
-                {"dd/MM/yyyy", "\\d{1,2}/\\d{1,2}/\\d{4}"},
-                {"yyyy/MM/dd", "\\d{4}/\\d{1,2}/\\d{1,2}"},
-                {"dd-MM-yyyy", "\\d{1,2}-\\d{1,2}-\\d{4}"},
-                {"dd.MM.yyyy", "\\d{1,2}\\.\\d{1,2}\\.\\d{4}"}
-            };
-            
-            for (String[] format : formats) {
-                if (dateStr.matches(format[1])) {
-                    return format[0];
-                }
-            }
-            
-            return "yyyy-MM-dd"; // 默认格式
-        }
-        
-        // Getters
-        public String getDateColumn() { return dateColumn; }
-        public String getAmountColumn() { return amountColumn; }
-        public String getDescriptionColumn() { return descriptionColumn; }
-        public String getCategoryColumn() { return categoryColumn; }
-        public String getDateFormat() { return dateFormat; }
-        public boolean isExpense() { return expense; }
-        public boolean isValid() { return valid; }
+
+        // 返回自动识别的列和日期格式
+        String[] result = new String[5];
+        result[0] = dateIndex >= 0 ? headers.get(dateIndex) : null;
+        result[1] = amountIndex >= 0 ? headers.get(amountIndex) : null;
+        result[2] = descIndex >= 0 ? headers.get(descIndex) : null;
+        result[3] = categoryIndex >= 0 ? headers.get(categoryIndex) : null;
+        result[4] = dateFormat;
+
+        return result;
     }
-    
+
+    /**
+     * 在标题列表中查找最匹配的列名
+     * 
+     * @param headers  列标题列表
+     * @param keywords 关键词数组
+     * @return 最匹配的列索引，如果没找到则返回-1
+     */
+    private int findBestMatch(List<String> headers, String[] keywords) {
+        // 首先尝试精确匹配
+        for (int i = 0; i < headers.size(); i++) {
+            String header = headers.get(i).toLowerCase();
+            for (String keyword : keywords) {
+                if (header.equals(keyword)) {
+                    return i;
+                }
+            }
+        }
+
+        // 然后尝试部分匹配
+        for (int i = 0; i < headers.size(); i++) {
+            String header = headers.get(i).toLowerCase();
+            for (String keyword : keywords) {
+                if (header.contains(keyword) || keyword.contains(header)) {
+                    return i;
+                }
+            }
+        }
+
+        return -1; // 未找到匹配项
+    }
+
+    /**
+     * 根据日期字符串猜测日期格式
+     * 
+     * @param dateStr 日期字符串
+     * @return 最可能的日期格式
+     */
+    private String guessDateFormat(String dateStr) {
+        String[][] formats = {
+                { "yyyy-MM-dd", "\\d{4}-\\d{1,2}-\\d{1,2}" },
+                { "MM/dd/yyyy", "\\d{1,2}/\\d{1,2}/\\d{4}" },
+                { "dd/MM/yyyy", "\\d{1,2}/\\d{1,2}/\\d{4}" },
+                { "yyyy/MM/dd", "\\d{4}/\\d{1,2}/\\d{1,2}" },
+                { "dd-MM-yyyy", "\\d{1,2}-\\d{1,2}-\\d{4}" },
+                { "dd.MM.yyyy", "\\d{1,2}\\.\\d{1,2}\\.\\d{4}" }
+        };
+
+        for (String[] format : formats) {
+            if (dateStr.matches(format[1])) {
+                return format[0];
+            }
+        }
+
+        return "yyyy-MM-dd"; // 默认格式
+    }
+
     /**
      * 导入结果类
      */
+    // 类注释：说明 ImportResult 类用于存储导入操作的结果
     public static class ImportResult {
+        // 定义静态内部类 ImportResult
         private int successFileCount = 0;
+        // 定义成功导入的文件数，初始为 0
         private int failedFileCount = 0;
+        // 定义失败导入的文件数，初始为 0
         private int totalRecordCount = 0;
-        
-        public int getSuccessFileCount() { return successFileCount; }
-        public void setSuccessFileCount(int successFileCount) { this.successFileCount = successFileCount; }
-        
-        public int getFailedFileCount() { return failedFileCount; }
-        public void setFailedFileCount(int failedFileCount) { this.failedFileCount = failedFileCount; }
-        
-        public int getTotalRecordCount() { return totalRecordCount; }
-        public void setTotalRecordCount(int totalRecordCount) { this.totalRecordCount = totalRecordCount; }
-        
+        // 定义导入的总记录数，初始为 0
+
+        public int getSuccessFileCount() {
+            return successFileCount;
+        }
+
+        // 获取成功文件计数
+        public void setSuccessFileCount(int successFileCount) {
+            this.successFileCount = successFileCount;
+        }
+        // 设置成功文件计数
+
+        public int getFailedFileCount() {
+            return failedFileCount;
+        }
+
+        // 获取失败文件计数
+        public void setFailedFileCount(int failedFileCount) {
+            this.failedFileCount = failedFileCount;
+        }
+        // 设置失败文件计数
+
+        public int getTotalRecordCount() {
+            return totalRecordCount;
+        }
+
+        // 获取总记录数
+        public void setTotalRecordCount(int totalRecordCount) {
+            this.totalRecordCount = totalRecordCount;
+        }
+        // 设置总记录数
+
         @Override
         public String toString() {
             return "成功导入 " + successFileCount + " 个文件，失败 " + failedFileCount + " 个文件，共 " + totalRecordCount + " 条记录";
+            // 重写 toString 方法，返回导入结果的描述
         }
     }
-} 
+}

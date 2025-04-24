@@ -1,13 +1,17 @@
 package com.financetracker.model;
 
+import java.io.Serializable;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 
 /**
- * Represents user preferences and application settings.
+ * 应用程序设置类
  */
-public class Settings {
+public class Settings implements Serializable {
+    private static final long serialVersionUID = 1L;
+    
     private int monthStartDay; // Day of month when a new "financial month" starts (default: 1)
     private String defaultCurrency; // Default currency for transactions
     private String dateFormat; // Preferred date format
@@ -17,32 +21,27 @@ public class Settings {
     private boolean autoBackupEnabled; // Whether to automatically backup data
     private int backupFrequencyDays; // How often to backup data (in days)
     private boolean aiAssistanceEnabled; // Whether AI features are enabled
+    private double monthlyBudget;
+    private int budgetStartDay;
     
+    /**
+     * 默认构造函数
+     */
     public Settings() {
         // Set default values
         this.monthStartDay = 1;
         this.defaultCurrency = "CNY";
         this.dateFormat = "yyyy-MM-dd";
         this.darkModeEnabled = false;
-        this.defaultCategories = new ArrayList<>();
+        this.defaultCategories = new ArrayList<>(Arrays.asList(
+            "餐饮", "购物", "交通", "住房", "娱乐", "医疗", "教育", "通讯", "其他"
+        ));
         this.dataStoragePath = "data/";
         this.autoBackupEnabled = true;
         this.backupFrequencyDays = 7;
         this.aiAssistanceEnabled = true;
-        
-        // Add some default categories
-        defaultCategories.add("Food");
-        defaultCategories.add("Transportation");
-        defaultCategories.add("Housing");
-        defaultCategories.add("Utilities");
-        defaultCategories.add("Entertainment");
-        defaultCategories.add("Shopping");
-        defaultCategories.add("Healthcare");
-        defaultCategories.add("Education");
-        defaultCategories.add("Salary");
-        defaultCategories.add("Investment");
-        defaultCategories.add("Gift");
-        defaultCategories.add("Other");
+        this.monthlyBudget = 5000.0;
+        this.budgetStartDay = 1;
     }
 
     // Getters and Setters
@@ -119,6 +118,66 @@ public class Settings {
 
     public void setAiAssistanceEnabled(boolean aiAssistanceEnabled) {
         this.aiAssistanceEnabled = aiAssistanceEnabled;
+    }
+    
+    /**
+     * 获取月度预算
+     */
+    public double getMonthlyBudget() {
+        return monthlyBudget;
+    }
+    
+    /**
+     * 设置月度预算
+     */
+    public void setMonthlyBudget(double monthlyBudget) {
+        this.monthlyBudget = monthlyBudget;
+    }
+    
+    /**
+     * 获取预算开始日期
+     */
+    public int getBudgetStartDay() {
+        return budgetStartDay;
+    }
+    
+    /**
+     * 设置预算开始日期
+     */
+    public void setBudgetStartDay(int budgetStartDay) {
+        if (budgetStartDay < 1) {
+            budgetStartDay = 1;
+        } else if (budgetStartDay > 28) {
+            budgetStartDay = 28;
+        }
+        this.budgetStartDay = budgetStartDay;
+    }
+    
+    /**
+     * 添加默认分类
+     */
+    public void addDefaultCategory(String category) {
+        if (!defaultCategories.contains(category)) {
+            defaultCategories.add(category);
+        }
+    }
+    
+    /**
+     * 删除默认分类
+     */
+    public boolean removeDefaultCategory(String category) {
+        return defaultCategories.remove(category);
+    }
+    
+    /**
+     * 重置为默认设置
+     */
+    public void resetToDefault() {
+        this.monthlyBudget = 5000.0;
+        this.budgetStartDay = 1;
+        this.defaultCategories = new ArrayList<>(Arrays.asList(
+            "餐饮", "购物", "交通", "住房", "娱乐", "医疗", "教育", "通讯", "其他"
+        ));
     }
     
     /**

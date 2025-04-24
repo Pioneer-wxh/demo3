@@ -6,9 +6,11 @@ import com.financetracker.ai.AiAssistantService;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.ActionListener;
 import java.time.LocalDate;
 import java.time.Month;
 import java.time.format.TextStyle;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
@@ -32,7 +34,8 @@ public class AnalysisPanel extends JPanel {
     private JTextArea aiResponseTextArea;
     private JTextField aiQueryField;
     private JComboBox<String> categoryComboBox;
-    private JComboBox<String> monthComboBox;
+    private JComboBox<Integer> yearComboBox;
+    private JComboBox<String> monthNameComboBox;
     
     /**
      * Constructor for AnalysisPanel.
@@ -147,21 +150,62 @@ public class AnalysisPanel extends JPanel {
         categoryComboBox.addActionListener(e -> updateCurrentMonthView());
         filterPanel.add(categoryComboBox);
         
-        // Add month filter
-        filterPanel.add(new JLabel("Month:"));
-        monthComboBox = new JComboBox<>();
-        LocalDate today = LocalDate.now();
-        for (int i = 0; i < 12; i++) {
-            LocalDate date = today.minusMonths(i);
-            String monthName = date.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault());
-            monthComboBox.addItem(monthName + " " + date.getYear());
+        // 添加月份筛选
+        JPanel monthFilterPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        
+        // 年份选择
+        JLabel yearLabel = new JLabel("年份:");
+        yearComboBox = new JComboBox<>();
+        // 获取当前年份，然后添加从当前年份往前5年的选项
+        int currentYear = LocalDate.now().getYear();
+        for (int i = 0; i < 5; i++) {
+            yearComboBox.addItem(currentYear - i);
         }
-        monthComboBox.addActionListener(e -> updateCurrentMonthView());
-        filterPanel.add(monthComboBox);
+        
+        // 月份选择
+        JLabel monthLabel = new JLabel("月份:");
+        monthNameComboBox = new JComboBox<>();
+        for (int i = 1; i <= 12; i++) {
+            Month month = Month.of(i);
+            monthNameComboBox.addItem(month.getDisplayName(TextStyle.FULL, Locale.getDefault()));
+        }
+        
+        // 设置当前月份为默认选中
+        monthNameComboBox.setSelectedIndex(LocalDate.now().getMonthValue() - 1);
+        
+        // 添加组件到筛选面板
+        monthFilterPanel.add(yearLabel);
+        monthFilterPanel.add(yearComboBox);
+        monthFilterPanel.add(monthLabel);
+        monthFilterPanel.add(monthNameComboBox);
+        
+        // 添加动作监听器
+        ActionListener filterListener = e -> {
+            int selectedYear = (int) yearComboBox.getSelectedItem();
+            int selectedMonthIndex = monthNameComboBox.getSelectedIndex() + 1;
+            LocalDate selectedDate = LocalDate.of(selectedYear, selectedMonthIndex, 1);
+            updateCurrentMonthView(selectedDate);
+        };
+        
+        yearComboBox.addActionListener(filterListener);
+        monthNameComboBox.addActionListener(filterListener);
+        
+        filterPanel.add(monthFilterPanel);
         
         // Add refresh button
-        JButton refreshButton = new JButton("Refresh");
-        refreshButton.addActionListener(e -> updateCurrentMonthView());
+        JButton refreshButton = new JButton("刷新");
+        refreshButton.addActionListener(e -> {
+            // 使用当前选择的年份和月份创建日期
+            if (yearComboBox != null && monthNameComboBox != null) {
+                int selectedYear = (int) yearComboBox.getSelectedItem();
+                int selectedMonthIndex = monthNameComboBox.getSelectedIndex() + 1;
+                LocalDate selectedDate = LocalDate.of(selectedYear, selectedMonthIndex, 1);
+                updateCurrentMonthView(selectedDate);
+            } else {
+                // 如果下拉菜单未初始化，则使用当前日期
+                updateCurrentMonthView(LocalDate.now());
+            }
+        });
         filterPanel.add(refreshButton);
         
         // Add filter panel to current month panel
@@ -351,47 +395,44 @@ public class AnalysisPanel extends JPanel {
      * Updates the current month view.
      */
     private void updateCurrentMonthView() {
-        // Get selected month
-        String selectedMonth = (String) monthComboBox.getSelectedItem();
-        LocalDate date = LocalDate.now();
+        if (yearComboBox != null && monthNameComboBox != null) {
+            int selectedYear = (int) yearComboBox.getSelectedItem();
+            int selectedMonthIndex = monthNameComboBox.getSelectedIndex() + 1;
+            LocalDate selectedDate = LocalDate.of(selectedYear, selectedMonthIndex, 1);
+            updateCurrentMonthView(selectedDate);
+        } else {
+            // 如果下拉菜单未初始化，则使用当前日期
+            updateCurrentMonthView(LocalDate.now());
+        }
+    }
+    
+    /**
+     * 更新指定日期的月份视图
+     * 
+     * @param date 日期（月份的第一天）
+     */
+    private void updateCurrentMonthView(LocalDate date) {
+        // 获取选择的类别
+        String selectedCategory = (String) categoryComboBox.getSelectedItem();
+        boolean allCategories = "All Categories".equals(selectedCategory);
         
-        if (selectedMonth != null && !selectedMonth.equals("Current Month")) {
-            // Parse month and year from selected item
-            String[] parts = selectedMonth.split(" ");
-            if (parts.length >= 2) {
-                String monthName = parts[0];
-                int year = Integer.parseInt(parts[1]);
+        // 获取交易记录
+        List<Transaction> allTransactions = transactionService.getAllTransactions();
+        List<Transaction> transactions = new ArrayList<>();
+        
+        // 筛选当月交易
+        for (Transaction transaction : allTransactions) {
+            LocalDate transactionDate = transaction.getDate();
+            boolean sameMonth = transactionDate.getMonthValue() == date.getMonthValue() 
+                && transactionDate.getYear() == date.getYear();
                 
-                // Find month number from name
-                for (Month month : Month.values()) {
-                    if (month.getDisplayName(TextStyle.FULL, Locale.getDefault()).equals(monthName)) {
-                        date = LocalDate.of(year, month, 1);
-                        break;
-                    }
-                }
+            if (sameMonth && (allCategories || selectedCategory.equals(transaction.getCategory()))) {
+                transactions.add(transaction);
             }
         }
         
-        // Get selected category
-        String selectedCategory = (String) categoryComboBox.getSelectedItem();
-        boolean filterByCategory = selectedCategory != null && !selectedCategory.equals("All Categories");
-        
-        // Get transactions for the selected month
-        List<Transaction> transactions;
-        if (filterByCategory) {
-            transactions = transactionService.getTransactionsForCategoryAndDateRange(
-                    selectedCategory,
-                    date.withDayOfMonth(1),
-                    date.withDayOfMonth(date.lengthOfMonth())
-            );
-        } else {
-            transactions = transactionService.getTransactionsForMonth(date.getYear(), date.getMonthValue());
-        }
-        
-        // Update summary
+        // 更新界面
         updateSummary(transactions, date);
-        
-        // Update category breakdown
         updateCategoryBreakdown(transactions);
     }
     

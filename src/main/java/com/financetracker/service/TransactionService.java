@@ -287,7 +287,7 @@ public class TransactionService {
     }
     
     /**
-     * 从CSV文件导入交易记录，自动识别日期、金额、类别和交易类型
+     * 从CSV文件导入交易记录
      * 
      * @param filePath CSV文件路径
      * @param dateColumn 日期列名
@@ -295,8 +295,8 @@ public class TransactionService {
      * @param descriptionColumn 描述列名
      * @param categoryColumn 类别列名（可选）
      * @param dateFormat 日期格式
-     * @param isExpense 是否为支出
-     * @return 导入的记录数
+     * @param isExpense 是否为支出（此参数已被忽略，现在会自动检测）
+     * @return 导入的记录数量
      */
     public int importFromCsv(String filePath, String dateColumn, String amountColumn, 
                             String descriptionColumn, String categoryColumn, 
@@ -304,7 +304,12 @@ public class TransactionService {
         int importedCount = 0;
         
         try (Reader reader = new FileReader(filePath);
-             CSVParser csvParser = new CSVParser(reader, CSVFormat.DEFAULT.withFirstRecordAsHeader().withIgnoreHeaderCase().withTrim())) {
+             CSVParser csvParser = new CSVParser(reader, CSVFormat.DEFAULT.builder()
+                    .setHeader()
+                    .setSkipHeaderRecord(true)
+                    .setIgnoreHeaderCase(true)
+                    .setTrim(true)
+                    .build())) {
             
             List<Transaction> existingTransactions = getAllTransactions();
             List<Transaction> importedTransactions = new ArrayList<>();
@@ -369,35 +374,58 @@ public class TransactionService {
                     }
                     
                     // 确定交易类型（收入或支出）和类别
-                    boolean transactionIsExpense = isExpense;
+                    boolean transactionIsExpense = true; // 默认为支出
                     String category = "未分类";
                     
-                    // 如果类别列存在，优先使用类别列的值，忽略AI服务
+                    // 首先基于金额判断交易类型
+                    if (amount < 0) {
+                        // 负数金额通常表示支出
+                        transactionIsExpense = true;
+                        amount = Math.abs(amount); // 取绝对值存储
+                    } else {
+                        // 尝试根据描述判断收入/支出
+                        transactionIsExpense = autoDetectIsExpense(description, amount, "");
+                    }
+                    
+                    // 如果类别列存在，优先使用类别列的值
                     if (categoryColumn != null && !categoryColumn.isEmpty()) {
                         try {
                             category = record.get(categoryColumn);
-                            // 如果类别为空，则使用默认类别
+                            // 如果类别为空，则使用自动检测
                             if (category == null || category.trim().isEmpty()) {
                                 if (useAiAssistant) {
                                     Map<String, Object> aiResult = detectCategoryAndType(description, amount);
                                     category = (String) aiResult.get("category");
+                                    // 使用AI检测的交易类型
                                     transactionIsExpense = (boolean) aiResult.get("isExpense");
                                 } else {
-                                    // 如果金额为负，则视为支出，并取其绝对值
-                                    if (amount < 0) {
-                                        transactionIsExpense = true;
-                                        amount = Math.abs(amount);
-                                    }
                                     category = autoDetectCategory(description, amount, transactionIsExpense);
+                                    
+                                    // 重新检测收入/支出类型
+                                    if (!description.isEmpty()) {
+                                        transactionIsExpense = autoDetectIsExpense(description, amount, category);
+                                    }
+                                }
+                            } else {
+                                // 即使有类别，也尝试根据类别名称判断交易类型
+                                if (!description.isEmpty()) {
+                                    // 根据类别和描述再次判断收入/支出
+                                    boolean suggestedType = autoDetectIsExpense(description, amount, category);
+                                    // 如果类别是典型的收入类别，优先使用类别判断结果
+                                    if (category.contains("收入") || category.contains("工资") || 
+                                        category.contains("奖金") || category.contains("退款") ||
+                                        category.equals("工资") || category.equals("奖金") || 
+                                        category.equals("投资收益") || category.equals("退款") || 
+                                        category.equals("其他收入")) {
+                                        transactionIsExpense = false;
+                                    } else if (suggestedType) {
+                                        // 如果自动检测为支出，则采用
+                                        transactionIsExpense = true;
+                                    }
                                 }
                             }
                         } catch (Exception e) {
                             System.err.println("获取类别字段出错: " + e.getMessage() + "，使用自动分类");
-                            // 如果获取类别失败，尝试使用规则识别
-                            if (amount < 0) {
-                                transactionIsExpense = true;
-                                amount = Math.abs(amount);
-                            }
                             category = autoDetectCategory(description, amount, transactionIsExpense);
                         }
                     } else if (useAiAssistant) {
@@ -408,22 +436,16 @@ public class TransactionService {
                             transactionIsExpense = (boolean) aiResult.get("isExpense");
                         } catch (Exception e) {
                             System.err.println("AI分析出错: " + e.getMessage() + "，使用规则分析");
-                            // 如果金额为负，则视为支出，并取其绝对值
-                            if (amount < 0) {
-                                transactionIsExpense = true;
-                                amount = Math.abs(amount);
-                            }
                             category = autoDetectCategory(description, amount, transactionIsExpense);
                         }
                     } else {
-                        // 如果金额为负，则视为支出，并取其绝对值
-                        if (amount < 0) {
-                            transactionIsExpense = true;
-                            amount = Math.abs(amount);
-                        }
-                        
                         // 使用规则分析类别
                         category = autoDetectCategory(description, amount, transactionIsExpense);
+                        
+                        // 根据类别再次确认交易类型
+                        if (!description.isEmpty()) {
+                            transactionIsExpense = autoDetectIsExpense(description, amount, category);
+                        }
                     }
                     
                     // 确保金额为正数
@@ -625,20 +647,62 @@ public class TransactionService {
      */
     private boolean autoDetectIsExpense(String description, double amount, String category) {
         // 根据类别判断
-        if (category.equals("工资") || category.equals("奖金") || category.equals("投资收益") || 
-            category.equals("利息") || category.equals("退款") || category.equals("其他收入")) {
-            return false;
+        if (category != null && !category.isEmpty()) {
+            if (category.equals("工资") || category.equals("奖金") || category.equals("投资收益") || 
+                category.equals("利息") || category.equals("退款") || category.equals("其他收入") ||
+                category.contains("收入") || category.contains("工资") || category.contains("奖金") ||
+                category.contains("投资") || category.contains("利息") || category.contains("退款")) {
+                return false;
+            }
         }
         
         // 根据描述中的关键词判断
         String lowerDesc = description.toLowerCase();
-        if (lowerDesc.contains("收入") || lowerDesc.contains("工资") || lowerDesc.contains("薪水") || 
-            lowerDesc.contains("奖金") || lowerDesc.contains("退款") || lowerDesc.contains("报销") || 
-            lowerDesc.contains("投资收益") || lowerDesc.contains("利息") || 
-            lowerDesc.contains("income") || lowerDesc.contains("salary") || 
-            lowerDesc.contains("bonus") || lowerDesc.contains("refund") || 
-            lowerDesc.contains("reimbursement") || lowerDesc.contains("interest")) {
-            return false;
+        
+        // 收入关键词
+        String[] incomeKeywords = {
+            "收入", "工资", "薪水", "薪资", "奖金", "退款", "报销", "投资收益", "利息", "股息", "分红",
+            "返还", "退税", "补贴", "津贴", "福利", "租金收入", "兼职", "外快", "副业", "红包",
+            "salary", "income", "bonus", "refund", "reimbursement", "interest", "dividend",
+            "return", "rebate", "subsidy", "allowance", "benefit", "rent income", "part-time",
+            "side job", "gift"
+        };
+        
+        // 支出关键词
+        String[] expenseKeywords = {
+            "支出", "消费", "购买", "买", "付", "缴", "交", "花费", "费用", "支付", "账单",
+            "expense", "cost", "purchase", "buy", "pay", "payment", "bill", "fee", "charge"
+        };
+        
+        // 检查描述中是否包含收入关键词
+        for (String keyword : incomeKeywords) {
+            if (lowerDesc.contains(keyword)) {
+                return false; // 包含收入关键词，判定为收入
+            }
+        }
+        
+        // 检查描述中是否包含支出关键词
+        for (String keyword : expenseKeywords) {
+            if (lowerDesc.contains(keyword)) {
+                return true; // 包含支出关键词，判定为支出
+            }
+        }
+        
+        // 判断常见收入来源名称
+        String[] incomeSourceNames = {
+            "工商银行", "农业银行", "建设银行", "中国银行", "交通银行", "招商银行", "邮政储蓄",
+            "支付宝", "微信", "公司", "单位", "企业", "集团", "有限公司", "银行转账", "转账收入"
+        };
+        
+        for (String source : incomeSourceNames) {
+            if (lowerDesc.contains(source.toLowerCase())) {
+                // 如果同时包含"转出"、"支出"等词，则仍判断为支出
+                if (lowerDesc.contains("转出") || lowerDesc.contains("支出") || 
+                    lowerDesc.contains("付款") || lowerDesc.contains("消费")) {
+                    return true;
+                }
+                return false; // 可能是银行或公司转账收入
+            }
         }
         
         // 默认为支出

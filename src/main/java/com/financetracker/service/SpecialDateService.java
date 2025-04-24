@@ -1,185 +1,194 @@
 package com.financetracker.service;
 
-import com.financetracker.model.SpecialDate;
-import com.google.gson.reflect.TypeToken; // Add this import
-
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.List;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
+
+import com.financetracker.model.SpecialDate;
 
 /**
- * Service for managing special dates.
+ * 特殊日期服务类，用于管理特殊日期
  */
 public class SpecialDateService {
+    private static final Logger LOGGER = Logger.getLogger(SpecialDateService.class.getName());
+    private static final String SPECIAL_DATES_FILE = "data/specialDates.dat";
     
-    private static final String SPECIAL_DATES_FILE_PATH = "data/special_dates.json";
-    private final JsonDataService<SpecialDate> jsonDataService;
+    private List<SpecialDate> specialDates;
     
     /**
-     * Constructor for SpecialDateService.
+     * 构造函数
      */
     public SpecialDateService() {
-        this.jsonDataService = new JsonDataService<>(SpecialDate.class, new TypeToken<List<SpecialDate>>() {});
+        this.specialDates = new ArrayList<>();
+        loadSpecialDates();
     }
     
     /**
-     * Gets all special dates.
-     * 
-     * @return The list of all special dates
+     * 获取所有特殊日期
      */
     public List<SpecialDate> getAllSpecialDates() {
-        List<SpecialDate> specialDates = new ArrayList<>();
-        
-        // Check if file exists
-        if (jsonDataService.fileExists(SPECIAL_DATES_FILE_PATH)) {
-            // Load special dates from file
-            try {
-                specialDates = jsonDataService.loadFromFile(SPECIAL_DATES_FILE_PATH);
-                if (specialDates == null) {
-                    specialDates = new ArrayList<>();
-                }
-            } catch (Exception e) {
-                e.printStackTrace();
-                specialDates = new ArrayList<>();
-            }
-        }
-        
-        // Sort special dates by date
-        specialDates.sort(Comparator.comparing(SpecialDate::getDate));
-        
-        return specialDates;
+        return new ArrayList<>(specialDates);
     }
     
     /**
-     * Gets special dates for a specific date range.
-     * 
-     * @param startDate The start date (inclusive)
-     * @param endDate The end date (inclusive)
-     * @return The list of special dates in the date range
-     */
-    public List<SpecialDate> getSpecialDatesForDateRange(LocalDate startDate, LocalDate endDate) {
-        List<SpecialDate> allSpecialDates = getAllSpecialDates();
-        List<SpecialDate> specialDatesInRange = new ArrayList<>();
-        
-        for (SpecialDate specialDate : allSpecialDates) {
-            LocalDate date = specialDate.getDate();
-            if (!date.isBefore(startDate) && !date.isAfter(endDate)) {
-                specialDatesInRange.add(specialDate);
-            }
-        }
-        
-        return specialDatesInRange;
-    }
-    
-    /**
-     * Gets special dates for a specific month.
-     * 
-     * @param year The year
-     * @param month The month (1-12)
-     * @return The list of special dates in the month
-     */
-    public List<SpecialDate> getSpecialDatesForMonth(int year, int month) {
-        LocalDate startDate = LocalDate.of(year, month, 1);
-        LocalDate endDate = startDate.plusMonths(1).minusDays(1);
-        
-        return getSpecialDatesForDateRange(startDate, endDate);
-    }
-    
-    /**
-     * Gets special dates for the current month.
-     * 
-     * @return The list of special dates in the current month
-     */
-    public List<SpecialDate> getSpecialDatesForCurrentMonth() {
-        LocalDate today = LocalDate.now();
-        return getSpecialDatesForMonth(today.getYear(), today.getMonthValue());
-    }
-    
-    /**
-     * Gets special dates for the next month.
-     * 
-     * @return The list of special dates in the next month
-     */
-    public List<SpecialDate> getSpecialDatesForNextMonth() {
-        LocalDate nextMonth = LocalDate.now().plusMonths(1);
-        return getSpecialDatesForMonth(nextMonth.getYear(), nextMonth.getMonthValue());
-    }
-    
-    /**
-     * Adds a special date.
-     * 
-     * @param specialDate The special date to add
-     * @return true if the operation was successful, false otherwise
+     * 添加特殊日期
      */
     public boolean addSpecialDate(SpecialDate specialDate) {
-        List<SpecialDate> specialDates = getAllSpecialDates();
+        if (specialDate == null) {
+            return false;
+        }
+        
         specialDates.add(specialDate);
-        return saveSpecialDates(specialDates);
+        return saveSpecialDates();
     }
     
     /**
-     * Updates a special date.
-     * 
-     * @param specialDate The special date to update
-     * @return true if the operation was successful, false otherwise
+     * 更新特殊日期
      */
-    public boolean updateSpecialDate(SpecialDate specialDate) {
-        List<SpecialDate> specialDates = getAllSpecialDates();
-        
-        // Find the special date to update
-        for (int i = 0; i < specialDates.size(); i++) {
-            if (specialDates.get(i).getId().equals(specialDate.getId())) {
-                specialDates.set(i, specialDate);
-                return saveSpecialDates(specialDates);
-            }
+    public boolean updateSpecialDate(SpecialDate oldDate, SpecialDate newDate) {
+        if (oldDate == null || newDate == null) {
+            return false;
         }
         
+        int index = specialDates.indexOf(oldDate);
+        if (index != -1) {
+            specialDates.set(index, newDate);
+            return saveSpecialDates();
+        }
         return false;
     }
     
     /**
-     * Deletes a special date.
-     * 
-     * @param specialDate The special date to delete
-     * @return true if the operation was successful, false otherwise
+     * 删除特殊日期
      */
     public boolean deleteSpecialDate(SpecialDate specialDate) {
-        List<SpecialDate> specialDates = getAllSpecialDates();
-        
-        // Find the special date to delete
-        for (int i = 0; i < specialDates.size(); i++) {
-            if (specialDates.get(i).getId().equals(specialDate.getId())) {
-                specialDates.remove(i);
-                return saveSpecialDates(specialDates);
-            }
+        if (specialDate == null) {
+            return false;
         }
         
+        boolean removed = specialDates.remove(specialDate);
+        if (removed) {
+            return saveSpecialDates();
+        }
         return false;
     }
     
     /**
-     * Saves special dates to the data file.
-     * 
-     * @param specialDates The special dates to save
-     * @return true if the operation was successful, false otherwise
+     * 根据日期查找特殊日期
      */
-    private boolean saveSpecialDates(List<SpecialDate> specialDates) {
+    public List<SpecialDate> findSpecialDatesByDate(LocalDate date) {
+        if (date == null) {
+            return new ArrayList<>();
+        }
+        
+        List<SpecialDate> result = new ArrayList<>();
+        for (SpecialDate specialDate : specialDates) {
+            if (specialDate.getDate().equals(date)) {
+                result.add(specialDate);
+            }
+        }
+        return result;
+    }
+    
+    /**
+     * 通过名称查找特殊日期
+     */
+    public SpecialDate findSpecialDateByName(String name) {
+        if (name == null || name.trim().isEmpty()) {
+            return null;
+        }
+        
+        for (SpecialDate specialDate : specialDates) {
+            if (specialDate.getName().equalsIgnoreCase(name.trim())) {
+                return specialDate;
+            }
+        }
+        return null;
+    }
+    
+    /**
+     * 查找特定月份的特殊日期
+     */
+    public List<SpecialDate> findSpecialDatesByMonth(int month) {
+        if (month < 1 || month > 12) {
+            return new ArrayList<>();
+        }
+        
+        List<SpecialDate> result = new ArrayList<>();
+        for (SpecialDate specialDate : specialDates) {
+            if (specialDate.getDate().getMonthValue() == month) {
+                result.add(specialDate);
+            }
+        }
+        return result;
+    }
+    
+    /**
+     * 保存特殊日期
+     */
+    private boolean saveSpecialDates() {
         try {
-            return jsonDataService.saveToFile(specialDates, SPECIAL_DATES_FILE_PATH);
-        } catch (Exception e) {
-            e.printStackTrace();
+            // 确保目录存在
+            Path dataDir = Paths.get("data");
+            if (!Files.exists(dataDir)) {
+                Files.createDirectories(dataDir);
+            }
+            
+            // 序列化对象到文件
+            try (ObjectOutputStream oos = new ObjectOutputStream(
+                    new FileOutputStream(SPECIAL_DATES_FILE))) {
+                oos.writeObject(specialDates);
+                return true;
+            }
+        } catch (IOException e) {
+            LOGGER.log(Level.SEVERE, "保存特殊日期时出错", e);
             return false;
         }
     }
     
     /**
-     * Creates a backup of the special dates file.
-     * 
-     * @return true if the operation was successful, false otherwise
+     * 加载特殊日期
      */
-    public boolean createBackup() {
-        String backupFilePath = SPECIAL_DATES_FILE_PATH + ".backup";
-        return jsonDataService.createBackup(SPECIAL_DATES_FILE_PATH, backupFilePath);
+    @SuppressWarnings("unchecked")
+    private boolean loadSpecialDates() {
+        // 检查文件是否存在
+        File file = new File(SPECIAL_DATES_FILE);
+        if (!file.exists()) {
+            // 如果文件不存在，保存空列表
+            return saveSpecialDates();
+        }
+        
+        try {
+            // 从文件反序列化对象
+            try (ObjectInputStream ois = new ObjectInputStream(
+                    new FileInputStream(SPECIAL_DATES_FILE))) {
+                specialDates = (List<SpecialDate>) ois.readObject();
+                return true;
+            }
+        } catch (IOException | ClassNotFoundException e) {
+            LOGGER.log(Level.SEVERE, "加载特殊日期时出错", e);
+            // 如果加载出错，使用空列表
+            specialDates = new ArrayList<>();
+            return false;
+        }
+    }
+    
+    /**
+     * 清除所有特殊日期
+     */
+    public boolean clearAllSpecialDates() {
+        specialDates.clear();
+        return saveSpecialDates();
     }
 }

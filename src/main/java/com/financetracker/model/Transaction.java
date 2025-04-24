@@ -1,12 +1,15 @@
 package com.financetracker.model;
 
+import java.io.Serializable;
 import java.time.LocalDate;
 import java.util.Objects;
 
 /**
  * Represents a financial transaction in the system.
  */
-public class Transaction {
+public class Transaction implements Serializable {
+    private static final long serialVersionUID = 1L;
+    
     private String id;
     private LocalDate date;
     private double amount;

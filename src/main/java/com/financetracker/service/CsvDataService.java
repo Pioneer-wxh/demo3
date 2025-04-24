@@ -1,10 +1,11 @@
 package com.financetracker.service;
 
-import java.io.FileReader;
-import java.io.FileWriter;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.Reader;
-import java.io.Writer;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.Serializable;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -12,217 +13,128 @@ import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.commons.csv.CSVFormat;
-import org.apache.commons.csv.CSVParser;
-import org.apache.commons.csv.CSVPrinter;
-import org.apache.commons.csv.CSVRecord;
-
 /**
- * Implementation of DataService that uses CSV for data persistence.
- * 
- * @param <T> The type of data to be persisted
+ * CSV数据服务实现类，用于替代JSON数据服务
+ * 注意：实际上这是一个简单的序列化数据服务，不是真正的CSV格式
+ * 因为快速替换JSON实现，使用Java序列化作为临时解决方案
  */
-public class CsvDataService<T> implements DataService<T> {
-    
-    private final CsvConverter<T> converter;
-    
+public class CsvDataService<T extends Serializable> implements DataService<T> {
+
+    private final Class<T> itemType;
+
     /**
-     * Constructor for CsvDataService.
+     * 构造函数，支持列表操作和单对象操作
      * 
-     * @param type The class of the type to be persisted
-     * @param converter The converter to convert between objects and CSV
+     * @param type 数据项类型
      */
-    private CsvDataService(Class<T> type, CsvConverter<T> converter) {
-        this.converter = converter;
+    public CsvDataService(Class<T> type) {
+        this.itemType = type;
     }
-    
+
     @Override
     public boolean saveToFile(List<T> items, String filePath) {
         try {
-            // Create directories if they don't exist
             Path path = Paths.get(filePath);
             Files.createDirectories(path.getParent());
-            
-            try (Writer writer = new FileWriter(filePath);
-                 CSVPrinter csvPrinter = new CSVPrinter(writer, CSVFormat.DEFAULT.withHeader(converter.getHeader()))) {
-                
-                for (T item : items) {
-                    csvPrinter.printRecord((Object[]) converter.toCsvRecord(item));
-                }
-                
+            try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(filePath))) {
+                oos.writeObject(items);
                 return true;
             }
         } catch (IOException e) {
+            System.err.println("保存列表到文件时出错 " + filePath + ": " + e.getMessage());
             e.printStackTrace();
             return false;
         }
     }
-    
+
     @Override
+    @SuppressWarnings("unchecked")
     public List<T> loadFromFile(String filePath) {
-        List<T> items = new ArrayList<>();
-        
-        if (!Files.exists(Paths.get(filePath))) {
-            return items;
+        Path path = Paths.get(filePath);
+        if (!Files.exists(path)) {
+            return new ArrayList<>();
         }
-        
-        try (Reader reader = new FileReader(filePath);
-             CSVParser csvParser = new CSVParser(reader, CSVFormat.DEFAULT.withFirstRecordAsHeader())) {
-            
-            for (CSVRecord record : csvParser) {
-                String[] values = new String[record.size()];
-                for (int i = 0; i < record.size(); i++) {
-                    values[i] = record.get(i);
-                }
-                T item = converter.fromCsvRecord(values);
-                if (item != null) {
-                    items.add(item);
-                }
+        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(filePath))) {
+            Object obj = ois.readObject();
+            if (obj instanceof List) {
+                return (List<T>) obj;
             }
-        } catch (IOException e) {
+            return new ArrayList<>();
+        } catch (IOException | ClassNotFoundException e) {
+            System.err.println("从文件加载列表时出错 " + filePath + ": " + e.getMessage());
             e.printStackTrace();
+            return new ArrayList<>();
         }
-        
-        return items;
     }
-    
+
     @Override
     public boolean saveItemToFile(T item, String filePath) {
         try {
-            // Create directories if they don't exist
             Path path = Paths.get(filePath);
             Files.createDirectories(path.getParent());
-            
-            boolean isNewFile = !Files.exists(path);
-            
-            try (Writer writer = new FileWriter(filePath, !isNewFile);
-                 CSVPrinter csvPrinter = new CSVPrinter(writer, CSVFormat.DEFAULT.withHeader(converter.getHeader()))) {
-                
-                if (isNewFile) {
-                    csvPrinter.printRecord((Object[]) converter.getHeader());
-                }
-                
-                csvPrinter.printRecord((Object[]) converter.toCsvRecord(item));
+            try (ObjectOutputStream oos = new ObjectOutputStream(new FileOutputStream(filePath))) {
+                oos.writeObject(item);
                 return true;
             }
         } catch (IOException e) {
+            System.err.println("保存项目到文件时出错 " + filePath + ": " + e.getMessage());
             e.printStackTrace();
             return false;
         }
     }
-    
+
     @Override
+    @SuppressWarnings("unchecked")
     public T loadItemFromFile(String filePath) {
-        if (!Files.exists(Paths.get(filePath))) {
+        Path path = Paths.get(filePath);
+        if (!Files.exists(path)) {
             return null;
         }
-        
-        try (Reader reader = new FileReader(filePath);
-             CSVParser csvParser = new CSVParser(reader, CSVFormat.DEFAULT.withFirstRecordAsHeader())) {
-            
-            for (CSVRecord record : csvParser) {
-                String[] values = new String[record.size()];
-                for (int i = 0; i < record.size(); i++) {
-                    values[i] = record.get(i);
-                }
-                return converter.fromCsvRecord(values);
+        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream(filePath))) {
+            Object obj = ois.readObject();
+            if (itemType.isInstance(obj)) {
+                return (T) obj;
             }
-        } catch (IOException e) {
+            return null;
+        } catch (IOException | ClassNotFoundException e) {
+            System.err.println("从文件加载项目时出错 " + filePath + ": " + e.getMessage());
             e.printStackTrace();
+            return null;
         }
-        
-        return null;
     }
-    
+
     @Override
     public boolean appendToFile(T item, String filePath) {
-        try {
-            // Create directories if they don't exist
-            Path path = Paths.get(filePath);
-            Files.createDirectories(path.getParent());
-            
-            boolean isNewFile = !Files.exists(path);
-            
-            try (Writer writer = new FileWriter(filePath, !isNewFile);
-                 CSVPrinter csvPrinter = new CSVPrinter(writer, CSVFormat.DEFAULT)) {
-                
-                if (isNewFile) {
-                    csvPrinter.printRecord((Object[]) converter.getHeader());
-                }
-                
-                csvPrinter.printRecord((Object[]) converter.toCsvRecord(item));
-                return true;
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-            return false;
+        List<T> items = loadFromFile(filePath);
+        if (items == null) {
+            items = new ArrayList<>();
         }
+        items.add(item);
+        return saveToFile(items, filePath);
     }
-    
+
     @Override
     public boolean fileExists(String filePath) {
         return Files.exists(Paths.get(filePath));
     }
-    
+
     @Override
     public boolean createBackup(String filePath, String backupFilePath) {
+        Path sourcePath = Paths.get(filePath);
+        if (!Files.exists(sourcePath)) {
+            System.err.println("备份源文件不存在: " + filePath);
+            return false;
+        }
         try {
-            if (!fileExists(filePath)) {
-                return false;
-            }
-            
-            // Create directories if they don't exist
             Path backupPath = Paths.get(backupFilePath);
             Files.createDirectories(backupPath.getParent());
-            
-            // Copy the file
-            Files.copy(Paths.get(filePath), backupPath, StandardCopyOption.REPLACE_EXISTING);
+            Files.copy(sourcePath, backupPath, StandardCopyOption.REPLACE_EXISTING);
+            System.out.println("备份成功创建: " + backupFilePath);
             return true;
         } catch (IOException e) {
+            System.err.println("为文件创建备份时出错 " + filePath + ": " + e.getMessage());
             e.printStackTrace();
             return false;
         }
-    }
-    
-    /**
-     * Creates a new instance of CsvDataService for a specific type.
-     * 
-     * @param <T> The type of data to be persisted
-     * @param type The class of the type to be persisted
-     * @param converter The converter to convert between objects and CSV
-     * @return A new instance of CsvDataService
-     */
-    public static <T> CsvDataService<T> forType(Class<T> type, CsvConverter<T> converter) {
-        return new CsvDataService<>(type, converter);
-    }
-    
-    /**
-     * Interface for converting between objects and CSV.
-     * 
-     * @param <T> The type of object to convert
-     */
-    public interface CsvConverter<T> {
-        /**
-         * Converts an object to a CSV record.
-         * 
-         * @param item The object to convert
-         * @return The CSV record
-         */
-        String[] toCsvRecord(T item);
-        
-        /**
-         * Converts a CSV record to an object.
-         * 
-         * @param record The CSV record
-         * @return The object
-         */
-        T fromCsvRecord(String[] record);
-        
-        /**
-         * Gets the CSV header.
-         * 
-         * @return The CSV header
-         */
-        String[] getHeader();
     }
 }
