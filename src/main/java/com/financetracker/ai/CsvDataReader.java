@@ -1,9 +1,10 @@
 package com.financetracker.ai;
 
 import java.io.BufferedReader;
-import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -12,22 +13,31 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 import com.financetracker.model.Transaction;
+import com.financetracker.util.PathUtil;
 
 /**
  * CSV数据读取器
  * 用于从CSV文件读取交易数据
  */
 public class CsvDataReader {
-    private static final String CSV_FILE_PATH = "E:\\code\\Java\\software_lab\\data\\transactions.csv";
+    // private static final String CSV_FILE_PATH = "E:\\code\\Java\\software_lab\\data\\transactions.csv";
+    // Use PathUtil directly for path info
+    // private static final String DATA_DIR = TransactionCsvExporter.DATA_DIR; // No longer valid
+    private static final String CSV_FILE_NAME = "transactions.csv"; // Keep filename constant
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
+
+    // 获取完整绝对路径
+    private static Path getCsvFilePath() {
+        // return Paths.get(DATA_DIR, CSV_FILE_NAME);
+        return PathUtil.getTransactionsCsvPath(); // Use PathUtil
+    }
 
     /**
      * 检查CSV文件是否存在
      * @return 文件是否存在
      */
     public static boolean isCsvFileExists() {
-        File file = new File(CSV_FILE_PATH);
-        return file.exists() && file.isFile();
+        return Files.exists(getCsvFilePath()); // 使用 Path 对象检查
     }
     
     /**
@@ -47,11 +57,11 @@ public class CsvDataReader {
         List<Transaction> transactions = new ArrayList<>();
         
         if (!isCsvFileExists()) {
-            System.err.println("CSV数据库文件不存在: " + CSV_FILE_PATH);
+            System.err.println("CSV数据库文件不存在: " + getCsvFilePath()); // 使用相对路径显示
             return transactions;
         }
         
-        try (BufferedReader reader = new BufferedReader(new FileReader(CSV_FILE_PATH))) {
+        try (BufferedReader reader = new BufferedReader(new FileReader(getCsvFilePath().toFile()))) { // 使用 Path 对象
             String line;
             boolean isFirstLine = true;
             

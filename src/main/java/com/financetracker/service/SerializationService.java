@@ -9,16 +9,14 @@ import java.io.Serializable;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.List;
 
 /**
- * CSV数据服务实现类，用于替代JSON数据服务
- * 注意：实际上这是一个简单的序列化数据服务，不是真正的CSV格式
- * 因为快速替换JSON实现，使用Java序列化作为临时解决方案
+ * 通用的序列化数据服务实现类
+ * Provides basic serialization/deserialization for Serializable objects or lists.
  */
-public class CsvDataService<T extends Serializable> implements DataService<T> {
+public class SerializationService<T extends Serializable> implements DataService<T> {
 
     private final Class<T> itemType;
 
@@ -27,7 +25,7 @@ public class CsvDataService<T extends Serializable> implements DataService<T> {
      * 
      * @param type 数据项类型
      */
-    public CsvDataService(Class<T> type) {
+    public SerializationService(Class<T> type) {
         this.itemType = type;
     }
 
@@ -100,41 +98,6 @@ public class CsvDataService<T extends Serializable> implements DataService<T> {
             System.err.println("从文件加载项目时出错 " + filePath + ": " + e.getMessage());
             e.printStackTrace();
             return null;
-        }
-    }
-
-    @Override
-    public boolean appendToFile(T item, String filePath) {
-        List<T> items = loadFromFile(filePath);
-        if (items == null) {
-            items = new ArrayList<>();
-        }
-        items.add(item);
-        return saveToFile(items, filePath);
-    }
-
-    @Override
-    public boolean fileExists(String filePath) {
-        return Files.exists(Paths.get(filePath));
-    }
-
-    @Override
-    public boolean createBackup(String filePath, String backupFilePath) {
-        Path sourcePath = Paths.get(filePath);
-        if (!Files.exists(sourcePath)) {
-            System.err.println("备份源文件不存在: " + filePath);
-            return false;
-        }
-        try {
-            Path backupPath = Paths.get(backupFilePath);
-            Files.createDirectories(backupPath.getParent());
-            Files.copy(sourcePath, backupPath, StandardCopyOption.REPLACE_EXISTING);
-            System.out.println("备份成功创建: " + backupFilePath);
-            return true;
-        } catch (IOException e) {
-            System.err.println("为文件创建备份时出错 " + filePath + ": " + e.getMessage());
-            e.printStackTrace();
-            return false;
         }
     }
 }

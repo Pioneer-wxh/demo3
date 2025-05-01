@@ -1,14 +1,5 @@
 package com.financetracker.service;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
@@ -16,21 +7,23 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.financetracker.model.SpecialDate;
+import com.financetracker.util.PathUtil;
 
 /**
  * 特殊日期服务类，用于管理特殊日期
  */
 public class SpecialDateService {
     private static final Logger LOGGER = Logger.getLogger(SpecialDateService.class.getName());
-    private static final String SPECIAL_DATES_FILE = "data/specialDates.dat";
     
     private List<SpecialDate> specialDates;
+    private final DataService<SpecialDate> dataService;
     
     /**
      * 构造函数
      */
     public SpecialDateService() {
         this.specialDates = new ArrayList<>();
+        this.dataService = new SerializationService<>(SpecialDate.class);
         loadSpecialDates();
     }
     
@@ -138,49 +131,27 @@ public class SpecialDateService {
      * 保存特殊日期
      */
     private boolean saveSpecialDates() {
-        try {
-            // 确保目录存在
-            Path dataDir = Paths.get("data");
-            if (!Files.exists(dataDir)) {
-                Files.createDirectories(dataDir);
-            }
-            
-            // 序列化对象到文件
-            try (ObjectOutputStream oos = new ObjectOutputStream(
-                    new FileOutputStream(SPECIAL_DATES_FILE))) {
-                oos.writeObject(specialDates);
-                return true;
-            }
-        } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "保存特殊日期时出错", e);
-            return false;
-        }
+        String filePath = PathUtil.getSpecialDatesDatPath().toString();
+        return dataService.saveToFile(specialDates, filePath);
     }
     
     /**
      * 加载特殊日期
      */
-    @SuppressWarnings("unchecked")
     private boolean loadSpecialDates() {
-        // 检查文件是否存在
-        File file = new File(SPECIAL_DATES_FILE);
-        if (!file.exists()) {
-            // 如果文件不存在，保存空列表
-            return saveSpecialDates();
-        }
+        String filePath = PathUtil.getSpecialDatesDatPath().toString();
+        List<SpecialDate> loadedDates = dataService.loadFromFile(filePath);
         
-        try {
-            // 从文件反序列化对象
-            try (ObjectInputStream ois = new ObjectInputStream(
-                    new FileInputStream(SPECIAL_DATES_FILE))) {
-                specialDates = (List<SpecialDate>) ois.readObject();
-                return true;
+        if (loadedDates != null) {
+            specialDates = loadedDates;
+            if (specialDates.isEmpty()) {
+                 LOGGER.log(Level.INFO, "Special dates file not found or empty. Initialized with empty list.");
             }
-        } catch (IOException | ClassNotFoundException e) {
-            LOGGER.log(Level.SEVERE, "加载特殊日期时出错", e);
-            // 如果加载出错，使用空列表
-            specialDates = new ArrayList<>();
-            return false;
+            return true;
+        } else {
+            LOGGER.log(Level.SEVERE, "Failed to load special dates, service returned null.");
+             specialDates = new ArrayList<>();
+             return false;
         }
     }
     

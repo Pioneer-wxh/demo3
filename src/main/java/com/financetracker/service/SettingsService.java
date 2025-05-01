@@ -1,32 +1,25 @@
 package com.financetracker.service;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.ObjectInputStream;
-import java.io.ObjectOutputStream;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import com.financetracker.model.Settings;
+import com.financetracker.util.PathUtil;
 
 /**
  * 设置服务类，用于管理应用程序设置
  */
 public class SettingsService {
     private static final Logger LOGGER = Logger.getLogger(SettingsService.class.getName());
-    private static final String SETTINGS_FILE = "data/settings.dat";
 
     private Settings settings;
+    private final DataService<Settings> dataService;
 
     /**
      * 构造函数
      */
     public SettingsService() {
+        this.dataService = new SerializationService<>(Settings.class);
         loadSettings();
     }
 
@@ -41,49 +34,24 @@ public class SettingsService {
      * 保存设置
      */
     public boolean saveSettings() {
-        try {
-            // 确保目录存在
-            Path dataDir = Paths.get("data");
-            if (!Files.exists(dataDir)) {
-                Files.createDirectories(dataDir);
-            }
-
-            // 序列化对象到文件
-            try (ObjectOutputStream oos = new ObjectOutputStream(
-                    new FileOutputStream(SETTINGS_FILE))) {
-                oos.writeObject(settings);
-                return true;
-            }
-        } catch (IOException e) {
-            LOGGER.log(Level.SEVERE, "保存设置时出错", e);
-            return false;
-        }
+        String filePath = PathUtil.getSettingsDatPath().toString();
+        return dataService.saveItemToFile(settings, filePath);
     }
 
     /**
      * 加载设置
      */
     public boolean loadSettings() {
-        // 检查文件是否存在
-        File file = new File(SETTINGS_FILE);
-        if (!file.exists()) {
-            // 如果文件不存在，创建默认设置
+        String filePath = PathUtil.getSettingsDatPath().toString();
+        Settings loadedSettings = dataService.loadItemFromFile(filePath);
+
+        if (loadedSettings == null) {
+            LOGGER.log(Level.INFO, "Settings file not found or failed to load. Creating default settings.");
             settings = new Settings();
             return saveSettings();
-        }
-
-        try {
-            // 从文件反序列化对象
-            try (ObjectInputStream ois = new ObjectInputStream(
-                    new FileInputStream(SETTINGS_FILE))) {
-                settings = (Settings) ois.readObject();
-                return true;
-            }
-        } catch (IOException | ClassNotFoundException e) {
-            LOGGER.log(Level.SEVERE, "加载设置时出错", e);
-            // 如果加载出错，创建默认设置
-            settings = new Settings();
-            return false;
+        } else {
+            settings = loadedSettings;
+            return true;
         }
     }
 

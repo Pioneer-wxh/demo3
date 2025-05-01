@@ -3,9 +3,6 @@ package com.financetracker.service;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.Reader;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -27,7 +24,8 @@ import com.financetracker.model.Transaction;
  */
 public class TransactionService {
     
-    private static final String CSV_FILE_PATH = "E:\\code\\Java\\software_lab\\data\\transactions.csv";
+    // 不再需要硬编码的完整路径
+    // private static final String CSV_FILE_PATH = "E:\\code\\Java\\software_lab\\data\\transactions.csv";
     private final TransactionCsvExporter csvExporter;
     
     /**
@@ -36,14 +34,14 @@ public class TransactionService {
     public TransactionService() {
         this.csvExporter = new TransactionCsvExporter();
         
-        // 确保CSV文件目录存在
-        try {
-            Path path = Paths.get(CSV_FILE_PATH);
-            Files.createDirectories(path.getParent());
-        } catch (Exception e) {
-            System.err.println("创建CSV文件目录时出错: " + e.getMessage());
-            e.printStackTrace();
-        }
+        // 确保数据目录存在 (不再需要在此处创建，由各服务在使用PathUtil获取路径后自行处理)
+        // try {
+        //     Path dataDir = Paths.get(TransactionCsvExporter.DATA_DIR); // 旧逻辑
+        //     Files.createDirectories(dataDir);
+        // } catch (Exception e) {
+        //     System.err.println("创建数据目录时出错: " + e.getMessage());
+        //     e.printStackTrace();
+        // }
     }
     
     /**
@@ -237,13 +235,12 @@ public class TransactionService {
     }
     
     /**
-     * Saves transactions to the data file.
+     * Saves transactions to the data file using the exporter.
      * 
      * @param transactions The transactions to save
      * @return true if the operation was successful, false otherwise
      */
-    private boolean saveTransactions(List<Transaction> transactions) {
-        // 保存到CSV文件
+    public boolean saveTransactions(List<Transaction> transactions) {
         return csvExporter.exportTransactionsToCSV(transactions);
     }
     
@@ -710,11 +707,28 @@ public class TransactionService {
     }
     
     /**
-     * Creates a backup of the transactions CSV file.
-     * 
-     * @return true if the operation was successful, false otherwise
+     * Creates a backup of the transaction data file.
+     * @return true if the backup was successful, false otherwise
      */
     public boolean createBackup() {
         return csvExporter.createCsvBackup();
+    }
+
+    /**
+     * Exports all transactions to the designated export file.
+     * @return true if export was successful, false otherwise
+     */
+    public boolean exportAllTransactions() {
+        List<Transaction> transactions = getAllTransactions();
+        return csvExporter.exportAllTransactionsToFile(transactions);
+    }
+
+    /**
+     * Exports transactions grouped by month to the designated classify directory.
+     * @return An ExportResult object containing details of the export process.
+     */
+    public TransactionCsvExporter.ExportResult exportTransactionsByMonth() {
+        List<Transaction> transactions = getAllTransactions();
+        return csvExporter.exportTransactionsByMonth(transactions);
     }
 }

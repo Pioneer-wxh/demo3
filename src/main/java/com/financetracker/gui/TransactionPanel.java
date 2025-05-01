@@ -2,12 +2,18 @@ package com.financetracker.gui;
 
 import com.financetracker.model.Transaction;
 import com.financetracker.service.TransactionService;
+import com.financetracker.service.CsvBatchImporter;
+import com.financetracker.service.TransactionCsvExporter;
+import com.financetracker.gui.AppIcon;
+import com.financetracker.util.PathUtil;
 
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
 import java.io.File;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -359,9 +365,11 @@ public class TransactionPanel extends JPanel {
                 options,
                 options[0]);
         
-        // 默认导入路径设置为E:\code\Java\software_lab\data
-        File defaultDir = new File("E:\\code\\Java\\software_lab\\data");
-        
+        // 不再需要硬编码的默认目录
+        // File defaultDir = new File("E:\\code\\Java\\software_lab\\data");
+        File defaultDir = null; // 或者设置为用户主目录等更合理的位置
+        // File defaultDir = new File(System.getProperty("user.home")); // 示例：用户主目录
+
         // 根据选择执行相应操作
         if (choice == 0) {
             // 选择文件导入
@@ -385,8 +393,8 @@ public class TransactionPanel extends JPanel {
             fileChooser.setFileFilter(new FileNameExtensionFilter("CSV文件", "csv"));
             fileChooser.setMultiSelectionEnabled(true); // 允许多选文件
             
-            // 设置默认目录
-            if (defaultDir.exists() && defaultDir.isDirectory()) {
+            // 设置默认目录 (如果提供了)
+            if (defaultDir != null && defaultDir.exists() && defaultDir.isDirectory()) {
                 fileChooser.setCurrentDirectory(defaultDir);
             }
             
@@ -438,8 +446,8 @@ public class TransactionPanel extends JPanel {
         dirChooser.setDialogTitle("选择包含CSV文件的目录");
         dirChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
         
-        // 设置默认目录
-        if (defaultDir.exists() && defaultDir.isDirectory()) {
+        // 设置默认目录 (如果提供了)
+        if (defaultDir != null && defaultDir.exists() && defaultDir.isDirectory()) {
             dirChooser.setCurrentDirectory(defaultDir);
             dirChooser.setSelectedFile(defaultDir);
         }
@@ -623,6 +631,10 @@ public class TransactionPanel extends JPanel {
             return;
         }
         
+        // 使用 PathUtil 获取绝对路径字符串
+        String exportAllPath = PathUtil.getExportAllTransactionsPath().toString();
+        String exportClassifyPath = PathUtil.getExportClassifyDirPath().toString();
+
         // 创建选项对话框
         String[] options = {"导出所有交易记录", "按月份导出", "取消"};
         int choice = JOptionPane.showOptionDialog(this,
@@ -637,10 +649,10 @@ public class TransactionPanel extends JPanel {
         // 根据选择执行相应操作
         if (choice == 0) {
             // 导出所有交易记录
-            boolean success = transactionService.createBackup();
+            boolean success = transactionService.exportAllTransactions();
             if (success) {
                 JOptionPane.showMessageDialog(this, 
-                    "交易记录已成功导出到CSV文件。\n文件位置: E:\\code\\Java\\software_lab\\data\\transactions.csv", 
+                    "交易记录已成功导出。\n文件位置: " + exportAllPath,
                     "导出成功", JOptionPane.INFORMATION_MESSAGE);
             } else {
                 JOptionPane.showMessageDialog(this, 
@@ -658,45 +670,29 @@ public class TransactionPanel extends JPanel {
      * 按月份导出交易记录
      */
     private void exportByMonth() {
-        // 创建目录选择器
-        JFileChooser dirChooser = new JFileChooser();
-        dirChooser.setDialogTitle("选择导出目录");
-        dirChooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
-        
-        // 默认导出路径设置为E:\code\Java\software_lab\data\export
-        File defaultDir = new File("E:\\code\\Java\\software_lab\\data\\export");
-        try {
-            defaultDir.mkdirs(); // 确保目录存在
-        } catch (Exception e) {
-            // 忽略创建目录错误
+        // 获取所有交易记录
+        List<Transaction> transactions = transactionService.getAllTransactions();
+        if (transactions.isEmpty()) {
+             JOptionPane.showMessageDialog(this, 
+                 "没有交易记录可以导出。", 
+                 "警告", JOptionPane.WARNING_MESSAGE);
+             return;
         }
         
-        if (defaultDir.exists() && defaultDir.isDirectory()) {
-            dirChooser.setCurrentDirectory(defaultDir);
-            dirChooser.setSelectedFile(defaultDir);
-        }
-        
-        // 显示目录选择器
-        int result = dirChooser.showSaveDialog(this);
-        if (result != JFileChooser.APPROVE_OPTION) {
-            return;
-        }
-        
-        // 获取选择的目录
-        File selectedDir = dirChooser.getSelectedFile();
-        final String directoryPath = selectedDir.getAbsolutePath();
-        
+        // 使用 PathUtil 获取按月导出的绝对路径
+        final String directoryPath = PathUtil.getExportClassifyDirPath().toString();
+
         // 询问用户确认
         int confirm = JOptionPane.showConfirmDialog(this, 
                 "是否要将交易记录按月份导出到目录 " + directoryPath + " 中？\n" +
-                "注意：这将为每个月创建一个CSV文件，并创建一个包含所有交易记录的文件。", 
+                "注意：这将为每个月创建一个CSV文件。",
                 "确认导出", JOptionPane.YES_NO_OPTION);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
-        
-        // 获取所有交易记录
-        List<Transaction> transactions = transactionService.getAllTransactions();
+
+        // 获取所有交易记录 (已在前面获取)
+        // List<Transaction> transactions = transactionService.getAllTransactions();
         
         // 显示进度对话框
         final JDialog progressDialog = new JDialog(mainFrame, "导出中...", true);
@@ -715,12 +711,8 @@ public class TransactionPanel extends JPanel {
             new SwingWorker<com.financetracker.service.TransactionCsvExporter.ExportResult, Void>() {
                 @Override
                 protected com.financetracker.service.TransactionCsvExporter.ExportResult doInBackground() throws Exception {
-                    // 创建导出器
-                    com.financetracker.service.TransactionCsvExporter exporter = 
-                        new com.financetracker.service.TransactionCsvExporter();
-                    
-                    // 执行导出
-                    return exporter.exportTransactionsByMonth(transactions, directoryPath);
+                    // 直接调用 Service 层的方法，不再需要创建 Exporter 实例
+                    return transactionService.exportTransactionsByMonth();
                 }
                 
                 @Override
@@ -734,7 +726,7 @@ public class TransactionPanel extends JPanel {
                         if (result.getSuccessFileCount() > 0) {
                             JOptionPane.showMessageDialog(TransactionPanel.this, 
                                     "导出完成：\n" + result.toString() + "\n" +
-                                    "文件已保存到目录：\n" + directoryPath, 
+                                    "文件已保存到目录：\n" + directoryPath,
                                     "导出成功", JOptionPane.INFORMATION_MESSAGE);
                         } else {
                             JOptionPane.showMessageDialog(TransactionPanel.this, 

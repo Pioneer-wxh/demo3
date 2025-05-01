@@ -72,3 +72,8 @@ data/*.txt
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Specific documents to ignore
+软工.docx
+CSV服务模块说明文档.md
+target目录说明.md

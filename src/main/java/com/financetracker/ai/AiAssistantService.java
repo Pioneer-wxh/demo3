@@ -10,7 +10,6 @@ import java.util.stream.Collectors;
 
 import com.financetracker.model.Transaction;
 import com.financetracker.service.TransactionService;
-import com.financetracker.ai.CsvDataReader;
 
 /**
  * 提供AI辅助分析功能的服务类
@@ -96,8 +95,8 @@ public class AiAssistantService {
     public Map<String, Object> analyzeTransaction(String description, double amount) {
         Map<String, Object> result = new HashMap<>();
         
-        // 根据历史交易记录进行分析
-        List<Transaction> allTransactions = CsvDataReader.readAllTransactions();
+        // 根据历史交易记录进行分析 (当前未使用)
+        // List<Transaction> allTransactions = CsvDataReader.readAllTransactions();
         
         // 默认分类和类型
         String category = "其他";

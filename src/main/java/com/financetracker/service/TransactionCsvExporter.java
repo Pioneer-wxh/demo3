@@ -7,7 +7,7 @@ import java.io.IOException;
 import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -22,6 +22,7 @@ import org.apache.commons.csv.CSVPrinter;
 import org.apache.commons.csv.CSVRecord;
 
 import com.financetracker.model.Transaction;
+import com.financetracker.util.PathUtil;
 // 导入 Transaction 类，表示交易记录的模型类
 
 /**
@@ -48,8 +49,24 @@ import com.financetracker.model.Transaction;
 public class TransactionCsvExporter {
     // 定义 TransactionCsvExporter 类，用于管理交易记录的 CSV 文件操作
 
-    private static final String CSV_FILE_PATH = "E:\\code\\Java\\software_lab\\data\\transactions.csv";
-    // 定义静态常量，指定交易记录存储的 CSV 文件路径
+    // Constants for directory/file names are still useful
+    // public static final String DATA_DIR = "data"; // No longer needed here, PathUtil provides paths
+    private static final String CSV_FILE_NAME = "transactions.csv";
+    // public static final String EXPORT_DIR = "export"; // No longer needed here
+    // public static final String CLASSIFY_SUBDIR = "classify"; // No longer needed here
+
+    // Path methods now just call PathUtil
+    private static Path getCsvFilePath() {
+        return PathUtil.getTransactionsCsvPath();
+    }
+
+    private static Path getExportAllFilePath() {
+        return PathUtil.getExportAllTransactionsPath();
+    }
+
+    private static Path getExportClassifyDirPath() {
+        return PathUtil.getExportClassifyDirPath();
+    }
 
     private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ISO_LOCAL_DATE;
     // 定义静态常量，使用 ISO_LOCAL_DATE 格式（YYYY-MM-DD）作为日期格式化器
@@ -72,7 +89,7 @@ public class TransactionCsvExporter {
         try {
             // 使用 try-catch 块处理可能的 IO 异常
             // 确保目录存在
-            Path path = Paths.get(CSV_FILE_PATH);
+            Path path = getCsvFilePath();
             // 将 CSV 文件路径转换为 Path 对象
             Files.createDirectories(path.getParent());
             // 确保文件所在的父目录存在，如果不存在则创建
@@ -127,7 +144,7 @@ public class TransactionCsvExporter {
         // 定义方法，返回从 CSV 文件读取的交易记录列表
         List<Transaction> transactions = new ArrayList<>();
         // 创建空 ArrayList 用于存储交易记录
-        Path path = Paths.get(CSV_FILE_PATH);
+        Path path = getCsvFilePath();
         // 将 CSV 文件路径转换为 Path 对象
 
         if (!Files.exists(path)) {
@@ -136,7 +153,7 @@ public class TransactionCsvExporter {
             // 如果文件不存在，返回空列表
         }
 
-        try (Reader reader = new FileReader(CSV_FILE_PATH);
+        try (Reader reader = new FileReader(path.toFile());
                 CSVParser csvParser = new CSVParser(reader, CSVFormat.DEFAULT.builder().setHeader().setSkipHeaderRecord(true).build())) {
             // 使用 try-with-resources 确保 reader 和 csvParser 自动关闭
             // 创建 FileReader 读取 CSV 文件
@@ -300,7 +317,7 @@ public class TransactionCsvExporter {
     // 方法注释：说明该方法用于检查 CSV 文件是否存在
     public boolean csvFileExists() {
         // 定义方法，返回 CSV 文件是否存在
-        return Files.exists(Paths.get(CSV_FILE_PATH));
+        return Files.exists(getCsvFilePath());
         // 使用 Files.exists 检查指定路径的文件是否存在
     }
 
@@ -318,10 +335,12 @@ public class TransactionCsvExporter {
             // 如果文件不存在，返回 false
         }
 
-        String backupFilePath = CSV_FILE_PATH + "." + System.currentTimeMillis() + ".bak";
+        // 使用相对路径生成备份文件名
+        String backupFileName = CSV_FILE_NAME + "." + System.currentTimeMillis() + ".bak";
+        Path backupFilePath = getCsvFilePath().resolveSibling(backupFileName); // Sibling in the resolved data dir
         // 生成备份文件路径，添加时间戳和 .bak 后缀
         try {
-            Files.copy(Paths.get(CSV_FILE_PATH), Paths.get(backupFilePath));
+            Files.copy(getCsvFilePath(), backupFilePath, StandardCopyOption.REPLACE_EXISTING); // 使用 StandardCopyOption
             // 使用 Files.copy 复制原始 CSV 文件到备份路径
             return true;
             // 备份成功，返回 true
@@ -337,21 +356,19 @@ public class TransactionCsvExporter {
      * 将所有交易记录按月导出到指定目录
      * 
      * @param transactions  要导出的交易记录列表
-     * @param directoryPath 导出目录路径
      * @return 导出结果，包含成功导出的文件数量和记录数量
      */
     // 方法注释：说明该方法用于按月分组导出交易记录到指定目录
-    public ExportResult exportTransactionsByMonth(List<Transaction> transactions, String directoryPath) {
-        // 定义方法，接收交易记录列表和导出目录路径，返回导出结果
+    public ExportResult exportTransactionsByMonth(List<Transaction> transactions) {
+        // 定义方法，接收交易记录列表，返回导出结果
         ExportResult result = new ExportResult();
         // 创建 ExportResult 对象，用于存储导出结果（成功/失败文件数和记录数）
+        Path exportDir = getExportClassifyDirPath(); // PathUtil provides absolute path
 
         try {
             // 使用 try-catch 块处理可能的异常
             // 确保目录存在
-            Path dir = Paths.get(directoryPath);
-            // 将导出目录路径转换为 Path 对象
-            Files.createDirectories(dir);
+            Files.createDirectories(exportDir); // 创建 export/classify 目录
             // 确保目录存在，如果不存在则创建
 
             // 按月份分组交易记录
@@ -384,11 +401,11 @@ public class TransactionCsvExporter {
                 // 生成文件名
                 String fileName = "transactions_" + yearMonth + ".csv";
                 // 创建文件名，如 transactions_2023-12.csv
-                Path filePath = dir.resolve(fileName);
+                Path filePath = exportDir.resolve(fileName); // 使用相对路径解析
                 // 解析为完整文件路径
 
                 // 导出到CSV文件
-                boolean success = exportTransactionsToFile(monthTransactions, filePath.toString());
+                boolean success = exportTransactionsToFile(monthTransactions, filePath);
                 // 调用 exportTransactionsToFile 导出该月交易记录
 
                 if (success) {
@@ -406,28 +423,8 @@ public class TransactionCsvExporter {
                 }
             }
 
-            // 导出所有交易记录到一个文件
-            String allFileName = "transactions_all.csv";
-            // 定义所有交易记录的文件名
-            Path allFilePath = dir.resolve(allFileName);
-            // 解析为完整文件路径
-            boolean success = exportTransactionsToFile(transactions, allFilePath.toString());
-            // 导出所有交易记录到一个文件
-
-            if (success) {
-                result.setSuccessFileCount(result.getSuccessFileCount() + 1);
-                // 增加成功文件计数
-                System.out.println("成功导出所有 " + transactions.size() + " 条交易记录到文件 " + allFileName);
-                // 打印成功导出的信息
-            } else {
-                result.setFailedFileCount(result.getFailedFileCount() + 1);
-                // 增加失败文件计数
-                System.err.println("导出所有交易记录失败");
-                // 打印失败信息
-            }
-
         } catch (Exception e) {
-            System.err.println("导出交易记录时出错: " + e.getMessage());
+            System.err.println("按月导出交易记录时出错: " + e.getMessage()); // 修改错误消息
             // 捕获并打印异常信息
             e.printStackTrace();
             // 打印异常堆栈跟踪
@@ -445,17 +442,15 @@ public class TransactionCsvExporter {
      * @return 是否成功导出
      */
     // 方法注释：说明该方法用于将交易记录导出到指定文件
-    private boolean exportTransactionsToFile(List<Transaction> transactions, String filePath) {
+    private boolean exportTransactionsToFile(List<Transaction> transactions, Path filePath) {
         // 定义私有方法，接收交易记录列表和文件路径，返回是否成功导出
         try {
             // 使用 try-catch 块处理可能的 IO 异常
             // 确保目录存在
-            Path path = Paths.get(filePath);
-            // 将文件路径转换为 Path 对象
-            Files.createDirectories(path.getParent());
+            Files.createDirectories(filePath.getParent());
             // 确保文件所在的父目录存在
 
-            try (BufferedWriter writer = Files.newBufferedWriter(path);
+            try (BufferedWriter writer = Files.newBufferedWriter(filePath);
                     CSVPrinter csvPrinter = new CSVPrinter(writer, CSVFormat.DEFAULT.builder().setHeader(CSV_HEADERS).build())) {
                 // 使用 try-with-resources 确保 writer 和 csvPrinter 自动关闭
                 // 创建 BufferedWriter 用于高效写入
@@ -490,6 +485,24 @@ public class TransactionCsvExporter {
             // 捕获并打印 IO 异常堆栈跟踪
             return false;
             // 导出失败，返回 false
+        }
+    }
+
+    /**
+     * 将所有交易记录导出到指定的 "export/transactions_all.csv" 文件
+     * @param transactions 要导出的交易记录列表
+     * @return 是否成功导出
+     */
+    public boolean exportAllTransactionsToFile(List<Transaction> transactions) {
+        Path exportPath = getExportAllFilePath(); // PathUtil provides absolute path
+        try {
+            // 确保 export 目录存在
+            Files.createDirectories(exportPath.getParent());
+            return exportTransactionsToFile(transactions, exportPath);
+        } catch (IOException e) {
+            System.err.println("创建导出目录时出错 '" + PathUtil.getExportDir().toString() + "': " + e.getMessage()); // Use PathUtil here
+            e.printStackTrace();
+            return false;
         }
     }
 
