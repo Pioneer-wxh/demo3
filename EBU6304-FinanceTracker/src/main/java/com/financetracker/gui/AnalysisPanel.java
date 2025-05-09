@@ -31,12 +31,13 @@ public class AnalysisPanel extends JPanel {
     
     private JTextArea summaryTextArea;
     private JTextArea categoryBreakdownTextArea;
-    private JTextArea aiResponseTextArea;
     private JTextField aiQueryField;
     private JComboBox<String> categoryComboBox;
     private JComboBox<Integer> yearComboBox;
     private JComboBox<String> monthNameComboBox;
-    private JComboBox<String> modelComboBox; // 新增模型选择框
+    private JComboBox<String> modelComboBox;
+    private JPanel chatPanel;
+    private JScrollPane chatScrollPane;
     
     /**
      * Constructor for AnalysisPanel.
@@ -224,84 +225,175 @@ public class AnalysisPanel extends JPanel {
      * @return The AI assistant panel
      */
     private JPanel createAiAssistantPanel() {
-        JPanel panel = new JPanel();
-        panel.setLayout(new BorderLayout());
+        JPanel panel = new JPanel(new BorderLayout());
         panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
-        // 新增模型选择面板
+        // 模型选择面板
         JPanel modelPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        modelPanel.setBorder(BorderFactory.createTitledBorder("选择模型"));
+        modelPanel.setBorder(BorderFactory.createTitledBorder("Model Selection"));
         modelComboBox = new JComboBox<>();
         modelComboBox.addItem("deepseek-llm");
         modelComboBox.addItem("qwen2");
-        modelPanel.add(new JLabel("Ollama模型:"));
+        modelPanel.add(new JLabel("Select Model:"));
         modelPanel.add(modelComboBox);
         panel.add(modelPanel, BorderLayout.NORTH);
 
-        // Create query panel
-        JPanel queryPanel = new JPanel();
-        queryPanel.setLayout(new BorderLayout());
-        queryPanel.setBorder(BorderFactory.createTitledBorder("Ask AI Assistant"));
+        // 聊天消息面板
+        chatPanel = new JPanel();
+        chatPanel.setLayout(new BoxLayout(chatPanel, BoxLayout.Y_AXIS));
+        chatPanel.setBackground(Color.WHITE);
 
-        // Add query field
+        chatScrollPane = new JScrollPane(chatPanel);
+        chatScrollPane.setVerticalScrollBarPolicy(JScrollPane.VERTICAL_SCROLLBAR_ALWAYS);
+        chatScrollPane.setPreferredSize(new Dimension(350, 300));
+        panel.add(chatScrollPane, BorderLayout.CENTER);
+
+        // 输入区
+        JPanel inputPanel = new JPanel(new BorderLayout());
         aiQueryField = new JTextField();
-        queryPanel.add(aiQueryField, BorderLayout.CENTER);
+        JButton sendButton = new JButton("Send");
+        sendButton.setFont(new Font("Arial", Font.BOLD, 14));
+        sendButton.addActionListener(e -> askAiAssistant());
+        aiQueryField.addActionListener(e -> askAiAssistant());
+        inputPanel.add(aiQueryField, BorderLayout.CENTER);
+        inputPanel.add(sendButton, BorderLayout.EAST);
+        inputPanel.setBorder(BorderFactory.createEmptyBorder(8, 0, 0, 0));
 
-        // Add ask button
-        JButton askButton = new JButton("Ask");
-        askButton.addActionListener(e -> askAiAssistant());
-        queryPanel.add(askButton, BorderLayout.EAST);
-
-        // Add query panel to AI assistant panel
-        panel.add(queryPanel, BorderLayout.CENTER);
-
-        // Create response panel
-        JPanel responsePanel = new JPanel();
-        responsePanel.setLayout(new BorderLayout());
-        responsePanel.setBorder(BorderFactory.createTitledBorder("AI Response"));
-
-        // Add response text area
-        aiResponseTextArea = new JTextArea();
-        aiResponseTextArea.setEditable(false);
-        aiResponseTextArea.setLineWrap(true);
-        aiResponseTextArea.setWrapStyleWord(true);
-        JScrollPane responseScrollPane = new JScrollPane(aiResponseTextArea);
-        responsePanel.add(responseScrollPane, BorderLayout.CENTER);
-
-        // Add response panel to AI assistant panel
-        panel.add(responsePanel, BorderLayout.SOUTH);
-
-        // Create suggestion panel
-        JPanel suggestionPanel = new JPanel();
-        suggestionPanel.setLayout(new FlowLayout(FlowLayout.LEFT));
+        // 建议问题
+        JPanel suggestionPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         suggestionPanel.setBorder(BorderFactory.createTitledBorder("Suggested Questions"));
-
-        // Add suggestion buttons
         JButton suggestion1 = new JButton("How can I save more money?");
-        suggestion1.addActionListener(e -> {
-            aiQueryField.setText(suggestion1.getText());
-            askAiAssistant();
-        });
-        suggestionPanel.add(suggestion1);
-
+        suggestion1.addActionListener(e -> { aiQueryField.setText(suggestion1.getText()); askAiAssistant(); });
         JButton suggestion2 = new JButton("What are my spending habits?");
-        suggestion2.addActionListener(e -> {
-            aiQueryField.setText(suggestion2.getText());
-            askAiAssistant();
-        });
-        suggestionPanel.add(suggestion2);
-
+        suggestion2.addActionListener(e -> { aiQueryField.setText(suggestion2.getText()); askAiAssistant(); });
         JButton suggestion3 = new JButton("How to budget for next month?");
-        suggestion3.addActionListener(e -> {
-            aiQueryField.setText(suggestion3.getText());
-            askAiAssistant();
-        });
+        suggestion3.addActionListener(e -> { aiQueryField.setText(suggestion3.getText()); askAiAssistant(); });
+        suggestionPanel.add(suggestion1);
+        suggestionPanel.add(suggestion2);
         suggestionPanel.add(suggestion3);
 
-        // Add suggestion panel to AI assistant panel
-        panel.add(suggestionPanel, BorderLayout.PAGE_END);
+        // 新建一个 southPanel，把建议和输入区垂直排列
+        JPanel southPanel = new JPanel();
+        southPanel.setLayout(new BorderLayout());
+        southPanel.add(suggestionPanel, BorderLayout.NORTH);
+        southPanel.add(inputPanel, BorderLayout.SOUTH);
+
+        panel.add(southPanel, BorderLayout.SOUTH);
+
+        // 监听panel宽度变化，动态调整气泡宽度
+        chatScrollPane.addComponentListener(new java.awt.event.ComponentAdapter() {
+            public void componentResized(java.awt.event.ComponentEvent evt) {
+                updateAllBubbleWidths();
+            }
+        });
 
         return panel;
+    }
+
+    // 动态调整所有气泡宽度
+    private void updateAllBubbleWidths() {
+        int maxWidth = chatScrollPane.getViewport().getWidth();
+        for (Component comp : chatPanel.getComponents()) {
+            if (comp instanceof JPanel) {
+                JPanel rowPanel = (JPanel) comp;
+                for (Component bubbleComp : rowPanel.getComponents()) {
+                    if (bubbleComp instanceof JTextArea) {
+                        ((JTextArea) bubbleComp).setMaximumSize(new Dimension((maxWidth - 60) / 2, Integer.MAX_VALUE));
+                    }
+                }
+            }
+        }
+        chatPanel.revalidate();
+    }
+
+    // 聊天气泡（最初JTextArea版本，宽度等分，高度自适应，时间戳在下方）
+    private void addChatBubble(String message, boolean isUser) {
+        int panelWidth = chatScrollPane != null ? chatScrollPane.getViewport().getWidth() : 350;
+        int bubbleWidth = (panelWidth - 20) / 2;
+
+        JPanel rowPanel = new JPanel();
+        rowPanel.setLayout(new BoxLayout(rowPanel, BoxLayout.X_AXIS));
+        rowPanel.setOpaque(false);
+
+        JTextArea bubbleArea = new JTextArea(message);
+        bubbleArea.setLineWrap(true);
+        bubbleArea.setWrapStyleWord(true);
+        bubbleArea.setEditable(false);
+        bubbleArea.setFont(new Font("微软雅黑", Font.PLAIN, 15));
+        bubbleArea.setBorder(BorderFactory.createEmptyBorder(8, 12, 8, 12));
+        bubbleArea.setBackground(isUser ? new Color(194, 241, 255) : new Color(230, 230, 230));
+        bubbleArea.setMaximumSize(new Dimension(bubbleWidth, Integer.MAX_VALUE));
+        bubbleArea.setAlignmentY(Component.TOP_ALIGNMENT);
+
+        // 时间戳
+        String time = java.time.LocalTime.now().withNano(0).toString();
+        JLabel timeLabel = new JLabel(time);
+        timeLabel.setFont(new Font("微软雅黑", Font.PLAIN, 12));
+        timeLabel.setForeground(Color.GRAY);
+        timeLabel.setAlignmentX(isUser ? Component.RIGHT_ALIGNMENT : Component.LEFT_ALIGNMENT);
+
+        // 垂直排列气泡和时间
+        Box verticalBox = Box.createVerticalBox();
+        verticalBox.add(bubbleArea);
+        verticalBox.add(Box.createVerticalStrut(2));
+        verticalBox.add(timeLabel);
+
+        if (isUser) {
+            rowPanel.add(Box.createHorizontalGlue());
+            rowPanel.add(verticalBox);
+            rowPanel.add(Box.createHorizontalStrut(5));
+        } else {
+            rowPanel.add(Box.createHorizontalStrut(5));
+            rowPanel.add(verticalBox);
+            rowPanel.add(Box.createHorizontalGlue());
+        }
+
+        chatPanel.add(rowPanel);
+        chatPanel.add(Box.createVerticalStrut(8));
+        chatPanel.revalidate();
+        chatPanel.repaint();
+
+        // 滚动到底部
+        SwingUtilities.invokeLater(() -> {
+            JScrollBar vertical = chatScrollPane.getVerticalScrollBar();
+            vertical.setValue(vertical.getMaximum());
+        });
+    }
+
+    // AI回复为英文
+    private void askAiAssistant() {
+        String query = aiQueryField.getText();
+        String model = (String) modelComboBox.getSelectedItem();
+
+        if (query == null || query.trim().isEmpty()) {
+            addChatBubble("Please enter your question.", true);
+            return;
+        }
+
+        addChatBubble(query, true); // 用户消息
+
+        SwingWorker<String, Void> worker = new SwingWorker<String, Void>() {
+            @Override
+            protected String doInBackground() throws Exception {
+                // 确保返回英文
+                String response = aiAssistantService.getResponse(query, model, transactionService);
+                // 如需强制英文可在此处处理
+                return response;
+            }
+
+            @Override
+            protected void done() {
+                try {
+                    String response = get();
+                    addChatBubble(response, false); // AI回复
+                } catch (Exception e) {
+                    addChatBubble("Error getting AI response: " + e.getMessage(), false);
+                }
+            }
+        };
+
+        worker.execute();
+        aiQueryField.setText("");
     }
     
     /**
@@ -514,43 +606,6 @@ public class AnalysisPanel extends JPanel {
         }
         
         categoryBreakdownTextArea.setText(breakdown.toString());
-    }
-    
-    /**
-     * Asks the AI assistant a question.
-     */
-    private void askAiAssistant() {
-        String query = aiQueryField.getText();
-        String model = (String) modelComboBox.getSelectedItem();
-
-        if (query == null || query.trim().isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Please enter a question.", "Error", JOptionPane.ERROR_MESSAGE);
-            return;
-        }
-
-        aiResponseTextArea.setText("Thinking...");
-
-        SwingWorker<String, Void> worker = new SwingWorker<String, Void>() {
-            @Override
-            protected String doInBackground() throws Exception {
-                return aiAssistantService.getResponse(query, model, transactionService);
-            }
-
-            @Override
-            protected void done() {
-                try {
-                    String response = get();
-                    aiResponseTextArea.setText(response);
-                    // 增加弹窗显示AI回复
-                    JOptionPane.showMessageDialog(AnalysisPanel.this, response, "AI助手回复", JOptionPane.INFORMATION_MESSAGE);
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    aiResponseTextArea.setText("Error getting response: " + e.getMessage());
-                }
-            }
-        };
-
-        worker.execute();
     }
     
     /**
