@@ -372,12 +372,14 @@ public class AnalysisPanel extends JPanel {
 
         addChatBubble(query, true); // 用户消息
 
+        // 获取所有历史交易数据
+        List<Transaction> allTransactions = transactionService.getAllTransactions();
+
         SwingWorker<String, Void> worker = new SwingWorker<String, Void>() {
             @Override
             protected String doInBackground() throws Exception {
-                // 确保返回英文
-                String response = aiAssistantService.getResponse(query, model, transactionService);
-                // 如需强制英文可在此处处理
+                // 传递所有历史交易数据给AI服务
+                String response = aiAssistantService.getResponse(query, model, allTransactions);
                 return response;
             }
 

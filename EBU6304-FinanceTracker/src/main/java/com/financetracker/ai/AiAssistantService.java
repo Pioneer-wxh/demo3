@@ -151,6 +151,71 @@ public class AiAssistantService {
     }
 
     /**
+     * 获取对用户查询的回应（Ollama版，支持历史数据）
+     * 
+     * @param query 用户查询
+     * @param modelName ollama模型名
+     * @param allTransactions 所有交易记录
+     * @return AI的回应
+     */
+    public String getResponse(String query, String modelName, List<Transaction> allTransactions) {
+        // 构建上下文信息
+        StringBuilder context = new StringBuilder();
+        context.append("以下是所有历史财务数据的摘要：\n\n");
+
+        // 统计总收入、总支出、结余
+        double totalIncome = 0;
+        double totalExpense = 0;
+        for (Transaction transaction : allTransactions) {
+            if (transaction.isExpense()) {
+                totalExpense += transaction.getAmount();
+            } else {
+                totalIncome += transaction.getAmount();
+            }
+        }
+        double totalBalance = totalIncome - totalExpense;
+
+        context.append(String.format("历史总收入：%.2f\n", totalIncome));
+        context.append(String.format("历史总支出：%.2f\n", totalExpense));
+        context.append(String.format("历史结余：%.2f\n\n", totalBalance));
+
+        // 按类别统计支出
+        Map<String, Double> categoryExpenses = new HashMap<>();
+        for (Transaction transaction : allTransactions) {
+            if (transaction.isExpense()) {
+                String category = transaction.getCategory();
+                double amount = transaction.getAmount();
+                categoryExpenses.put(category, categoryExpenses.getOrDefault(category, 0.0) + amount);
+            }
+        }
+
+        // 按支出金额排序类别
+        List<Map.Entry<String, Double>> sortedCategories = categoryExpenses.entrySet().stream()
+                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .toList();
+
+        if (!sortedCategories.isEmpty()) {
+            context.append("按类别统计历史支出：\n");
+            for (Map.Entry<String, Double> entry : sortedCategories) {
+                String category = entry.getKey();
+                double amount = entry.getValue();
+                double percentage = (amount / totalExpense) * 100;
+                context.append(String.format("- %s: %.2f (%.1f%%)\n", category, amount, percentage));
+            }
+            context.append("\n");
+        }
+
+        // 组装用户查询与上下文
+        StringBuilder fullQuery = new StringBuilder();
+        fullQuery.append(context);
+        fullQuery.append("用户的问题是: ").append(query);
+        fullQuery.append("\n\n请根据以上所有历史财务数据，对用户的问题提供专业、具体、有帮助的回答。");
+
+        // 调用 Ollama
+        return callOllama(fullQuery.toString(), modelName);
+    }
+
+    /**
      * 调用本地 Ollama API
      */
     private String callOllama(String prompt, String model) {
