@@ -6,6 +6,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 import com.financetracker.model.Transaction;
@@ -16,10 +17,10 @@ import com.financetracker.service.TransactionService;
  */
 public class AiAssistantService {
     
-    private final SparkAiService sparkAiService;
+    private final OpenRouterAiService aiService;
     
     public AiAssistantService() {
-        this.sparkAiService = new SparkAiService();
+        this.aiService = new OpenRouterAiService();
     }
     
     /**
@@ -81,8 +82,71 @@ public class AiAssistantService {
         fullQuery.append("用户的问题是: ").append(query);
         fullQuery.append("\n\n请根据以上财务数据，对用户的问题提供专业、具体、有帮助的回答。");
         
-        // 调用讯飞星火大模型API
-        return sparkAiService.chat(fullQuery.toString());
+        // 调用AI服务
+        return aiService.chat(fullQuery.toString());
+    }
+    
+    /**
+     * 获取对用户查询的回应（流式）
+     * 
+     * @param query 用户查询
+     * @param transactionService 交易服务
+     * @param messageConsumer 消息处理回调
+     */
+    public void getResponseStream(String query, TransactionService transactionService, Consumer<String> messageConsumer) {
+        // 获取交易数据
+        List<Transaction> allTransactions = transactionService.getAllTransactions();
+        List<Transaction> currentMonthTransactions = transactionService.getTransactionsForCurrentMonth();
+        
+        // 构建上下文信息
+        StringBuilder context = new StringBuilder();
+        context.append("以下是当前财务数据的摘要：\n\n");
+        
+        // 添加当前月份的收支情况
+        double currentMonthIncome = transactionService.getTotalIncome(currentMonthTransactions);
+        double currentMonthExpense = transactionService.getTotalExpense(currentMonthTransactions);
+        double currentMonthBalance = currentMonthIncome - currentMonthExpense;
+        
+        YearMonth currentMonth = YearMonth.now();
+        context.append(String.format("当前月份(%s)收支：\n", currentMonth.format(DateTimeFormatter.ofPattern("yyyy年MM月"))));
+        context.append(String.format("- 总收入：%.2f\n", currentMonthIncome));
+        context.append(String.format("- 总支出：%.2f\n", currentMonthExpense));
+        context.append(String.format("- 结余：%.2f\n\n", currentMonthBalance));
+        
+        // 添加按类别统计
+        Map<String, Double> categoryExpenses = new HashMap<>();
+        for (Transaction transaction : currentMonthTransactions) {
+            if (transaction.isExpense()) {
+                String category = transaction.getCategory();
+                double amount = transaction.getAmount();
+                categoryExpenses.put(category, categoryExpenses.getOrDefault(category, 0.0) + amount);
+            }
+        }
+        
+        // 按支出金额排序类别
+        List<Map.Entry<String, Double>> sortedCategories = categoryExpenses.entrySet().stream()
+                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .collect(Collectors.toList());
+        
+        if (!sortedCategories.isEmpty()) {
+            context.append("按类别统计支出：\n");
+            for (Map.Entry<String, Double> entry : sortedCategories) {
+                String category = entry.getKey();
+                double amount = entry.getValue();
+                double percentage = (amount / currentMonthExpense) * 100;
+                context.append(String.format("- %s: %.2f (%.1f%%)\n", category, amount, percentage));
+            }
+            context.append("\n");
+        }
+        
+        // 组装用户查询与上下文
+        StringBuilder fullQuery = new StringBuilder();
+        fullQuery.append(context);
+        fullQuery.append("用户的问题是: ").append(query);
+        fullQuery.append("\n\n请根据以上财务数据，对用户的问题提供专业、具体、有帮助的回答。");
+        
+        // 调用AI服务（流式）
+        aiService.chatStream(fullQuery.toString(), messageConsumer);
     }
     
     /**
@@ -341,8 +405,8 @@ public class AiAssistantService {
             data.append("\n");
         }
         
-        // 使用星火大模型生成分析报告
-        return sparkAiService.generateMonthlyAnalysisReport(data.toString());
+        // 使用AI服务生成分析报告
+        return aiService.generateMonthlyAnalysisReport(data.toString());
     }
     
     /**
@@ -393,7 +457,58 @@ public class AiAssistantService {
             data.append("\n");
         }
         
-        // 使用星火大模型生成下月预算建议
-        return sparkAiService.generateBudgetSuggestions(data.toString());
+        // 使用AI服务生成下月预算建议
+        return aiService.generateBudgetSuggestions(data.toString());
+    }
+    
+    /**
+     * 流式生成月度分析报告
+     * 
+     * @param transactionService 交易服务
+     * @param messageConsumer 消息处理回调
+     */
+    public void generateCurrentMonthAnalysisStream(TransactionService transactionService, Consumer<String> messageConsumer) {
+        List<Transaction> currentMonthTransactions = transactionService.getTransactionsForCurrentMonth();
+        
+        // 准备数据（与非流式方法相同）
+        StringBuilder data = new StringBuilder();
+        YearMonth currentMonth = YearMonth.now();
+        double totalIncome = transactionService.getTotalIncome(currentMonthTransactions);
+        double totalExpense = transactionService.getTotalExpense(currentMonthTransactions);
+        
+        data.append(String.format("当前月份：%s\n", currentMonth.format(DateTimeFormatter.ofPattern("yyyy年MM月"))));
+        data.append(String.format("总收入：%.2f\n", totalIncome));
+        data.append(String.format("总支出：%.2f\n", totalExpense));
+        data.append(String.format("结余：%.2f\n\n", totalIncome - totalExpense));
+        
+        // 按类别统计支出
+        Map<String, Double> categoryExpenses = new HashMap<>();
+        for (Transaction transaction : currentMonthTransactions) {
+            if (transaction.isExpense()) {
+                String category = transaction.getCategory();
+                double amount = transaction.getAmount();
+                categoryExpenses.put(category, categoryExpenses.getOrDefault(category, 0.0) + amount);
+            }
+        }
+        
+        // 按支出金额排序类别
+        List<Map.Entry<String, Double>> sortedExpenses = categoryExpenses.entrySet().stream()
+                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .collect(Collectors.toList());
+        
+        if (!sortedExpenses.isEmpty()) {
+            data.append("支出类别统计：\n");
+            for (Map.Entry<String, Double> entry : sortedExpenses) {
+                data.append(String.format("- %s: %.2f (%.1f%%)\n", 
+                        entry.getKey(), entry.getValue(), entry.getValue() / totalExpense * 100));
+            }
+            data.append("\n");
+        }
+        
+        // 使用AI服务流式生成分析报告
+        String prompt = "你是一位专业的财务分析师。根据以下财务数据，生成一份详细的月度分析报告，包括收支情况分析、消费趋势分析和财务健康状况评估：\n\n" 
+                + data.toString();
+                
+        aiService.chatStream(prompt, messageConsumer);
     }
 }
