@@ -1,7 +1,11 @@
 package com.financetracker.ai;
 
+import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 /**
  * 简单的JSON帮助类，用于生成和解析基本的JSON格式
@@ -166,5 +170,139 @@ public class SimpleJsonHelper {
             return m.group(1);
         }
         return null;
+    }
+    
+    /**
+     * 解析JSON字符串为Map对象
+     * 
+     * @param json JSON字符串
+     * @return 包含JSON数据的Map对象
+     */
+    public static Map<String, Object> parseJson(String json) {
+        return parseJsonSimple(json);
+    }
+    
+    /**
+     * 简单的JSON解析方法
+     * 
+     * @param json JSON字符串
+     * @return 包含JSON数据的Map对象
+     */
+    private static Map<String, Object> parseJsonSimple(String json) {
+        Map<String, Object> result = new HashMap<>();
+        
+        // 清理JSON字符串
+        json = json.trim();
+        if (json.startsWith("{") && json.endsWith("}")) {
+            json = json.substring(1, json.length() - 1).trim();
+        }
+        
+        // 匹配键值对: "key":"value" 或 "key":value 或 "key":[array] 或 "key":{object}
+        StringBuilder patternStr = new StringBuilder();
+        patternStr.append("\"([^\"]+)\"\\s*:\\s*"); // 匹配键
+        patternStr.append("("); // 开始分组匹配不同类型的值
+        patternStr.append("\"([^\"]*)\""); // 字符串值
+        patternStr.append("|"); 
+        patternStr.append("([-+]?[0-9]*\\.?[0-9]+)"); // 数字值
+        patternStr.append("|"); 
+        patternStr.append("\\[(.*?)\\]"); // 数组
+        patternStr.append("|"); 
+        patternStr.append("\\{(.*?)\\}"); // 对象
+        patternStr.append("|"); 
+        patternStr.append("(true|false|null)"); // 布尔值或null
+        patternStr.append(")");
+        
+        Pattern pattern = Pattern.compile(patternStr.toString());
+        Matcher matcher = pattern.matcher(json);
+        
+        while (matcher.find()) {
+            String key = matcher.group(1);
+            String stringValue = matcher.group(3);
+            String numberValue = matcher.group(4);
+            String arrayContent = matcher.group(5);
+            String objectContent = matcher.group(6);
+            String booleanOrNullValue = matcher.group(7);
+            
+            if (stringValue != null) {
+                result.put(key, stringValue);
+            } else if (numberValue != null) {
+                try {
+                    if (numberValue.contains(".")) {
+                        result.put(key, Double.parseDouble(numberValue));
+                    } else {
+                        result.put(key, Long.parseLong(numberValue));
+                    }
+                } catch (NumberFormatException e) {
+                    result.put(key, numberValue);
+                }
+            } else if (arrayContent != null) {
+                result.put(key, parseJsonArray(arrayContent));
+            } else if (objectContent != null) {
+                result.put(key, parseJsonSimple(objectContent));
+            } else if (booleanOrNullValue != null) {
+                if ("true".equals(booleanOrNullValue)) {
+                    result.put(key, Boolean.TRUE);
+                } else if ("false".equals(booleanOrNullValue)) {
+                    result.put(key, Boolean.FALSE);
+                } else {
+                    result.put(key, null);
+                }
+            }
+        }
+        
+        return result;
+    }
+    
+    /**
+     * 简单的JSON数组解析方法
+     * 
+     * @param json JSON数组字符串内容
+     * @return 包含JSON数组数据的List对象
+     */
+    private static List<Object> parseJsonArray(String json) {
+        List<Object> result = new ArrayList<>();
+        
+        Pattern stringPattern = Pattern.compile("\"([^\"]*)\"");
+        Pattern numberPattern = Pattern.compile("([-+]?[0-9]*\\.?[0-9]+)");
+        Pattern booleanPattern = Pattern.compile("(true|false|null)");
+        
+        Matcher stringMatcher = stringPattern.matcher(json);
+        while (stringMatcher.find()) {
+            result.add(stringMatcher.group(1));
+        }
+        
+        // 如果没有找到字符串值，尝试找数字值
+        if (result.isEmpty()) {
+            Matcher numberMatcher = numberPattern.matcher(json);
+            while (numberMatcher.find()) {
+                String value = numberMatcher.group(1);
+                try {
+                    if (value.contains(".")) {
+                        result.add(Double.parseDouble(value));
+                    } else {
+                        result.add(Long.parseLong(value));
+                    }
+                } catch (NumberFormatException e) {
+                    // 跳过无法解析的数字
+                }
+            }
+        }
+        
+        // 如果没有找到字符串和数字值，尝试找布尔值和null
+        if (result.isEmpty()) {
+            Matcher booleanMatcher = booleanPattern.matcher(json);
+            while (booleanMatcher.find()) {
+                String value = booleanMatcher.group(1);
+                if ("true".equals(value)) {
+                    result.add(Boolean.TRUE);
+                } else if ("false".equals(value)) {
+                    result.add(Boolean.FALSE);
+                } else {
+                    result.add(null);
+                }
+            }
+        }
+        
+        return result;
     }
 } 

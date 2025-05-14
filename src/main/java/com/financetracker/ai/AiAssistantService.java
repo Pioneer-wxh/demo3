@@ -17,10 +17,10 @@ import com.financetracker.service.TransactionService;
  */
 public class AiAssistantService {
     
-    private final OpenRouterAiService aiService;
+    private final DeepSeekAiService aiService;
     
     public AiAssistantService() {
-        this.aiService = new OpenRouterAiService();
+        this.aiService = new DeepSeekAiService();
     }
     
     /**
@@ -31,59 +31,69 @@ public class AiAssistantService {
      * @return AI的回应
      */
     public String getResponse(String query, TransactionService transactionService) {
-        // 获取交易数据
-        List<Transaction> allTransactions = transactionService.getAllTransactions();
-        List<Transaction> currentMonthTransactions = transactionService.getTransactionsForCurrentMonth();
-        
-        // 构建上下文信息
-        StringBuilder context = new StringBuilder();
-        context.append("以下是当前财务数据的摘要：\n\n");
-        
-        // 添加当前月份的收支情况
-        double currentMonthIncome = transactionService.getTotalIncome(currentMonthTransactions);
-        double currentMonthExpense = transactionService.getTotalExpense(currentMonthTransactions);
-        double currentMonthBalance = currentMonthIncome - currentMonthExpense;
-        
-        YearMonth currentMonth = YearMonth.now();
-        context.append(String.format("当前月份(%s)收支：\n", currentMonth.format(DateTimeFormatter.ofPattern("yyyy年MM月"))));
-        context.append(String.format("- 总收入：%.2f\n", currentMonthIncome));
-        context.append(String.format("- 总支出：%.2f\n", currentMonthExpense));
-        context.append(String.format("- 结余：%.2f\n\n", currentMonthBalance));
-        
-        // 添加按类别统计
-        Map<String, Double> categoryExpenses = new HashMap<>();
-        for (Transaction transaction : currentMonthTransactions) {
-            if (transaction.isExpense()) {
-                String category = transaction.getCategory();
-                double amount = transaction.getAmount();
-                categoryExpenses.put(category, categoryExpenses.getOrDefault(category, 0.0) + amount);
+        try {
+            // 检查AI服务是否可用
+            if (!aiService.isServiceAvailable()) {
+                return "AI服务暂时不可用，请确保已正确配置API密钥和网络连接。";
             }
-        }
-        
-        // 按支出金额排序类别
-        List<Map.Entry<String, Double>> sortedCategories = categoryExpenses.entrySet().stream()
-                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
-                .collect(Collectors.toList());
-        
-        if (!sortedCategories.isEmpty()) {
-            context.append("按类别统计支出：\n");
-            for (Map.Entry<String, Double> entry : sortedCategories) {
-                String category = entry.getKey();
-                double amount = entry.getValue();
-                double percentage = (amount / currentMonthExpense) * 100;
-                context.append(String.format("- %s: %.2f (%.1f%%)\n", category, amount, percentage));
+            
+            // 获取交易数据
+            List<Transaction> allTransactions = transactionService.getAllTransactions();
+            List<Transaction> currentMonthTransactions = transactionService.getTransactionsForCurrentMonth();
+            
+            // 构建上下文信息
+            StringBuilder context = new StringBuilder();
+            context.append("以下是当前财务数据的摘要：\n\n");
+            
+            // 添加当前月份的收支情况
+            double currentMonthIncome = transactionService.getTotalIncome(currentMonthTransactions);
+            double currentMonthExpense = transactionService.getTotalExpense(currentMonthTransactions);
+            double currentMonthBalance = currentMonthIncome - currentMonthExpense;
+            
+            YearMonth currentMonth = YearMonth.now();
+            context.append(String.format("当前月份(%s)收支：\n", currentMonth.format(DateTimeFormatter.ofPattern("yyyy年MM月"))));
+            context.append(String.format("- 总收入：%.2f\n", currentMonthIncome));
+            context.append(String.format("- 总支出：%.2f\n", currentMonthExpense));
+            context.append(String.format("- 结余：%.2f\n\n", currentMonthBalance));
+            
+            // 添加按类别统计
+            Map<String, Double> categoryExpenses = new HashMap<>();
+            for (Transaction transaction : currentMonthTransactions) {
+                if (transaction.isExpense()) {
+                    String category = transaction.getCategory();
+                    double amount = transaction.getAmount();
+                    categoryExpenses.put(category, categoryExpenses.getOrDefault(category, 0.0) + amount);
+                }
             }
-            context.append("\n");
+            
+            // 按支出金额排序类别
+            List<Map.Entry<String, Double>> sortedCategories = categoryExpenses.entrySet().stream()
+                    .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                    .collect(Collectors.toList());
+            
+            if (!sortedCategories.isEmpty()) {
+                context.append("按类别统计支出：\n");
+                for (Map.Entry<String, Double> entry : sortedCategories) {
+                    String category = entry.getKey();
+                    double amount = entry.getValue();
+                    double percentage = (amount / currentMonthExpense) * 100;
+                    context.append(String.format("- %s: %.2f (%.1f%%)\n", category, amount, percentage));
+                }
+                context.append("\n");
+            }
+            
+            // 组装用户查询与上下文
+            StringBuilder fullQuery = new StringBuilder();
+            fullQuery.append(context);
+            fullQuery.append("用户的问题是: ").append(query);
+            fullQuery.append("\n\n请根据以上财务数据，对用户的问题提供专业、具体、有帮助的回答。");
+            
+            // 调用AI服务
+            return aiService.chat(fullQuery.toString());
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "抱歉，处理您的请求时遇到了错误：" + e.getMessage() + "\n请稍后再试或联系支持团队。";
         }
-        
-        // 组装用户查询与上下文
-        StringBuilder fullQuery = new StringBuilder();
-        fullQuery.append(context);
-        fullQuery.append("用户的问题是: ").append(query);
-        fullQuery.append("\n\n请根据以上财务数据，对用户的问题提供专业、具体、有帮助的回答。");
-        
-        // 调用AI服务
-        return aiService.chat(fullQuery.toString());
     }
     
     /**
@@ -94,59 +104,70 @@ public class AiAssistantService {
      * @param messageConsumer 消息处理回调
      */
     public void getResponseStream(String query, TransactionService transactionService, Consumer<String> messageConsumer) {
-        // 获取交易数据
-        List<Transaction> allTransactions = transactionService.getAllTransactions();
-        List<Transaction> currentMonthTransactions = transactionService.getTransactionsForCurrentMonth();
-        
-        // 构建上下文信息
-        StringBuilder context = new StringBuilder();
-        context.append("以下是当前财务数据的摘要：\n\n");
-        
-        // 添加当前月份的收支情况
-        double currentMonthIncome = transactionService.getTotalIncome(currentMonthTransactions);
-        double currentMonthExpense = transactionService.getTotalExpense(currentMonthTransactions);
-        double currentMonthBalance = currentMonthIncome - currentMonthExpense;
-        
-        YearMonth currentMonth = YearMonth.now();
-        context.append(String.format("当前月份(%s)收支：\n", currentMonth.format(DateTimeFormatter.ofPattern("yyyy年MM月"))));
-        context.append(String.format("- 总收入：%.2f\n", currentMonthIncome));
-        context.append(String.format("- 总支出：%.2f\n", currentMonthExpense));
-        context.append(String.format("- 结余：%.2f\n\n", currentMonthBalance));
-        
-        // 添加按类别统计
-        Map<String, Double> categoryExpenses = new HashMap<>();
-        for (Transaction transaction : currentMonthTransactions) {
-            if (transaction.isExpense()) {
-                String category = transaction.getCategory();
-                double amount = transaction.getAmount();
-                categoryExpenses.put(category, categoryExpenses.getOrDefault(category, 0.0) + amount);
+        try {
+            // 检查AI服务是否可用
+            if (!aiService.isServiceAvailable()) {
+                messageConsumer.accept("AI服务暂时不可用，请确保已正确配置API密钥和网络连接。");
+                return;
             }
-        }
-        
-        // 按支出金额排序类别
-        List<Map.Entry<String, Double>> sortedCategories = categoryExpenses.entrySet().stream()
-                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
-                .collect(Collectors.toList());
-        
-        if (!sortedCategories.isEmpty()) {
-            context.append("按类别统计支出：\n");
-            for (Map.Entry<String, Double> entry : sortedCategories) {
-                String category = entry.getKey();
-                double amount = entry.getValue();
-                double percentage = (amount / currentMonthExpense) * 100;
-                context.append(String.format("- %s: %.2f (%.1f%%)\n", category, amount, percentage));
+            
+            // 获取交易数据
+            List<Transaction> allTransactions = transactionService.getAllTransactions();
+            List<Transaction> currentMonthTransactions = transactionService.getTransactionsForCurrentMonth();
+            
+            // 构建上下文信息
+            StringBuilder context = new StringBuilder();
+            context.append("以下是当前财务数据的摘要：\n\n");
+            
+            // 添加当前月份的收支情况
+            double currentMonthIncome = transactionService.getTotalIncome(currentMonthTransactions);
+            double currentMonthExpense = transactionService.getTotalExpense(currentMonthTransactions);
+            double currentMonthBalance = currentMonthIncome - currentMonthExpense;
+            
+            YearMonth currentMonth = YearMonth.now();
+            context.append(String.format("当前月份(%s)收支：\n", currentMonth.format(DateTimeFormatter.ofPattern("yyyy年MM月"))));
+            context.append(String.format("- 总收入：%.2f\n", currentMonthIncome));
+            context.append(String.format("- 总支出：%.2f\n", currentMonthExpense));
+            context.append(String.format("- 结余：%.2f\n\n", currentMonthBalance));
+            
+            // 添加按类别统计
+            Map<String, Double> categoryExpenses = new HashMap<>();
+            for (Transaction transaction : currentMonthTransactions) {
+                if (transaction.isExpense()) {
+                    String category = transaction.getCategory();
+                    double amount = transaction.getAmount();
+                    categoryExpenses.put(category, categoryExpenses.getOrDefault(category, 0.0) + amount);
+                }
             }
-            context.append("\n");
+            
+            // 按支出金额排序类别
+            List<Map.Entry<String, Double>> sortedCategories = categoryExpenses.entrySet().stream()
+                    .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                    .collect(Collectors.toList());
+            
+            if (!sortedCategories.isEmpty()) {
+                context.append("按类别统计支出：\n");
+                for (Map.Entry<String, Double> entry : sortedCategories) {
+                    String category = entry.getKey();
+                    double amount = entry.getValue();
+                    double percentage = (amount / currentMonthExpense) * 100;
+                    context.append(String.format("- %s: %.2f (%.1f%%)\n", category, amount, percentage));
+                }
+                context.append("\n");
+            }
+            
+            // 组装用户查询与上下文
+            StringBuilder fullQuery = new StringBuilder();
+            fullQuery.append(context);
+            fullQuery.append("用户的问题是: ").append(query);
+            fullQuery.append("\n\n请根据以上财务数据，对用户的问题提供专业、具体、有帮助的回答。");
+            
+            // 调用AI服务（流式）
+            aiService.chatStream(fullQuery.toString(), messageConsumer);
+        } catch (Exception e) {
+            e.printStackTrace();
+            messageConsumer.accept("抱歉，处理您的请求时遇到了错误：" + e.getMessage() + "\n请稍后再试或联系支持团队。");
         }
-        
-        // 组装用户查询与上下文
-        StringBuilder fullQuery = new StringBuilder();
-        fullQuery.append(context);
-        fullQuery.append("用户的问题是: ").append(query);
-        fullQuery.append("\n\n请根据以上财务数据，对用户的问题提供专业、具体、有帮助的回答。");
-        
-        // 调用AI服务（流式）
-        aiService.chatStream(fullQuery.toString(), messageConsumer);
     }
     
     /**
@@ -510,5 +531,48 @@ public class AiAssistantService {
                 + data.toString();
                 
         aiService.chatStream(prompt, messageConsumer);
+    }
+    
+    /**
+     * 与AI进行普通对话，不添加财务上下文
+     * 
+     * @param query 用户查询
+     * @return AI的回应
+     */
+    public String getChatResponse(String query) {
+        try {
+            // 检查AI服务是否可用
+            if (!aiService.isServiceAvailable()) {
+                return "AI服务暂时不可用，请确保已正确配置API密钥和网络连接。";
+            }
+            
+            // 直接调用AI服务，不添加财务数据上下文
+            return aiService.chat(query);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return "抱歉，处理您的请求时遇到了错误：" + e.getMessage() + "\n请稍后再试或联系支持团队。";
+        }
+    }
+
+    /**
+     * 与AI进行普通对话（流式），不添加财务上下文
+     * 
+     * @param query 用户查询
+     * @param messageConsumer 消息处理回调
+     */
+    public void getChatResponseStream(String query, Consumer<String> messageConsumer) {
+        try {
+            // 检查AI服务是否可用
+            if (!aiService.isServiceAvailable()) {
+                messageConsumer.accept("AI服务暂时不可用，请确保已正确配置API密钥和网络连接。");
+                return;
+            }
+            
+            // 直接调用AI服务流式API，不添加财务数据上下文
+            aiService.chatStream(query, messageConsumer);
+        } catch (Exception e) {
+            e.printStackTrace();
+            messageConsumer.accept("抱歉，处理您的请求时遇到了错误：" + e.getMessage() + "\n请稍后再试或联系支持团队。");
+        }
     }
 }

@@ -1,5 +1,5 @@
 # DeepSeek API配置
-deepseek.api.key=sk-597281f165e848c5b835eb335bee1cd8
+deepseek.api.key=your_api_key_here
 deepseek.api.url=https://api.deepseek.com/v1/chat/completions
 deepseek.model=deepseek-chat
 

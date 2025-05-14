@@ -1,20 +1,43 @@
 package com.financetracker.gui;
 
-import com.financetracker.model.Transaction;
-import com.financetracker.service.TransactionService;
-import com.financetracker.ai.AiAssistantService;
-
-import javax.swing.*;
-import java.awt.*;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Cursor;
+import java.awt.FlowLayout;
+import java.awt.Font;
 import java.awt.event.ActionListener;
 import java.time.LocalDate;
 import java.time.Month;
+import java.time.format.DateTimeFormatter;
 import java.time.format.TextStyle;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+
+import javax.swing.BorderFactory;
+import javax.swing.ButtonGroup;
+import javax.swing.JButton;
+import javax.swing.JComboBox;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JRadioButton;
+import javax.swing.JScrollPane;
+import javax.swing.JTabbedPane;
+import javax.swing.JTextArea;
+import javax.swing.JTextField;
+import javax.swing.SwingWorker;
+import javax.swing.UIManager;
+
+import com.financetracker.ai.AiAssistantService;
+import com.financetracker.ai.CsvDataReader;
+import com.financetracker.model.SpecialDate;
+import com.financetracker.model.Transaction;
+import com.financetracker.service.BudgetAdjustmentService;
+import com.financetracker.service.SettingsService;
+import com.financetracker.service.SpecialDateService;
+import com.financetracker.service.TransactionService;
 
 /**
  * Panel for AI-assisted analysis.
@@ -24,6 +47,9 @@ public class AnalysisPanel extends JPanel {
     private MainFrame mainFrame;
     private TransactionService transactionService;
     private AiAssistantService aiAssistantService;
+    private SpecialDateService specialDateService;
+    private BudgetAdjustmentService budgetAdjustmentService;
+    private SettingsService settingsService;
     
     private JPanel currentMonthPanel;
     private JPanel aiAssistantPanel;
@@ -37,15 +63,54 @@ public class AnalysisPanel extends JPanel {
     private JComboBox<Integer> yearComboBox;
     private JComboBox<String> monthNameComboBox;
     
+    private JRadioButton normalModeRadio;
+    private JRadioButton financialModeRadio;
+    private boolean isFinancialMode = false; // 默认为普通对话模式
+    
     /**
      * Constructor for AnalysisPanel.
      * 
-     * @param mainFrame The main frame
+     * @param transactionService The transaction service.
+     * @param settingsService The settings service.
+     * @param specialDateService The special date service.
+     * @param budgetAdjustmentService The budget adjustment service.
      */
-    public AnalysisPanel(MainFrame mainFrame) {
-        this.mainFrame = mainFrame;
-        this.transactionService = new TransactionService();
+    public AnalysisPanel(TransactionService transactionService, SettingsService settingsService,
+                          SpecialDateService specialDateService, BudgetAdjustmentService budgetAdjustmentService) {
+        this.transactionService = transactionService;
+        this.settingsService = settingsService;
+        this.specialDateService = specialDateService;
+        this.budgetAdjustmentService = budgetAdjustmentService;
         this.aiAssistantService = new AiAssistantService();
+        
+        // 设置CsvDataReader的TransactionService
+        CsvDataReader.setTransactionService(transactionService);
+        
+        initComponents();
+    }
+    
+    /**
+     * Constructor for AnalysisPanel.
+     * 
+     * @param transactionService The transaction service.
+     * @param settingsService The settings service.
+     * @param specialDateService The special date service.
+     * @param budgetAdjustmentService The budget adjustment service.
+     * @param mainFrame The main frame.
+     */
+    public AnalysisPanel(TransactionService transactionService, SettingsService settingsService,
+                        SpecialDateService specialDateService, BudgetAdjustmentService budgetAdjustmentService,
+                        MainFrame mainFrame) {
+        this.transactionService = transactionService;
+        this.settingsService = settingsService;
+        this.specialDateService = specialDateService;
+        this.budgetAdjustmentService = budgetAdjustmentService;
+        this.mainFrame = mainFrame;
+        this.aiAssistantService = new AiAssistantService();
+        
+        // 设置CsvDataReader的TransactionService
+        CsvDataReader.setTransactionService(transactionService);
+        
         initComponents();
     }
     
@@ -227,6 +292,37 @@ public class AnalysisPanel extends JPanel {
         panel.setLayout(new BorderLayout());
         panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         
+        // 创建模式选择面板
+        JPanel modePanel = new JPanel();
+        modePanel.setLayout(new FlowLayout(FlowLayout.LEFT));
+        modePanel.setBorder(BorderFactory.createTitledBorder("对话模式"));
+        
+        // 创建单选按钮组
+        normalModeRadio = new JRadioButton("普通对话模式", true);
+        financialModeRadio = new JRadioButton("财务分析模式", false);
+        
+        ButtonGroup modeGroup = new ButtonGroup();
+        modeGroup.add(normalModeRadio);
+        modeGroup.add(financialModeRadio);
+        
+        // 添加事件监听
+        normalModeRadio.addActionListener(e -> {
+            isFinancialMode = false;
+            aiResponseTextArea.setText("已切换至普通对话模式。您可以与AI进行任何对话，不会自动添加财务数据。");
+        });
+        
+        financialModeRadio.addActionListener(e -> {
+            isFinancialMode = true;
+            aiResponseTextArea.setText("已切换至财务分析模式。AI将自动分析您的财务数据，以帮助您回答财务相关问题。");
+        });
+        
+        // 添加到模式面板
+        modePanel.add(normalModeRadio);
+        modePanel.add(financialModeRadio);
+        
+        // 添加模式面板到顶部
+        panel.add(modePanel, BorderLayout.NORTH);
+        
         // Create query panel
         JPanel queryPanel = new JPanel();
         queryPanel.setLayout(new BorderLayout());
@@ -241,8 +337,9 @@ public class AnalysisPanel extends JPanel {
         askButton.addActionListener(e -> askAiAssistant());
         queryPanel.add(askButton, BorderLayout.EAST);
         
-        // Add query panel to AI assistant panel
-        panel.add(queryPanel, BorderLayout.NORTH);
+        // 将查询面板添加到中间面板
+        JPanel centerPanel = new JPanel(new BorderLayout());
+        centerPanel.add(queryPanel, BorderLayout.NORTH);
         
         // Create response panel
         JPanel responsePanel = new JPanel();
@@ -257,38 +354,47 @@ public class AnalysisPanel extends JPanel {
         JScrollPane responseScrollPane = new JScrollPane(aiResponseTextArea);
         responsePanel.add(responseScrollPane, BorderLayout.CENTER);
         
-        // Add response panel to AI assistant panel
-        panel.add(responsePanel, BorderLayout.CENTER);
+        // 将响应面板添加到中间面板
+        centerPanel.add(responsePanel, BorderLayout.CENTER);
+        
+        // 将中间面板添加到主面板
+        panel.add(centerPanel, BorderLayout.CENTER);
         
         // Create suggestion panel
         JPanel suggestionPanel = new JPanel();
         suggestionPanel.setLayout(new FlowLayout(FlowLayout.LEFT));
-        suggestionPanel.setBorder(BorderFactory.createTitledBorder("Suggested Questions"));
+        suggestionPanel.setBorder(BorderFactory.createTitledBorder("Suggested Financial Questions"));
         
         // Add suggestion buttons
         JButton suggestion1 = new JButton("How can I save more money?");
         suggestion1.addActionListener(e -> {
             aiQueryField.setText(suggestion1.getText());
-            askAiAssistant();
+            // 使用财务AI模式
+            askFinancialAiAssistant(suggestion1.getText());
         });
         suggestionPanel.add(suggestion1);
         
         JButton suggestion2 = new JButton("What are my spending habits?");
         suggestion2.addActionListener(e -> {
             aiQueryField.setText(suggestion2.getText());
-            askAiAssistant();
+            // 使用财务AI模式
+            askFinancialAiAssistant(suggestion2.getText());
         });
         suggestionPanel.add(suggestion2);
         
         JButton suggestion3 = new JButton("How to budget for next month?");
         suggestion3.addActionListener(e -> {
             aiQueryField.setText(suggestion3.getText());
-            askAiAssistant();
+            // 使用财务AI模式
+            askFinancialAiAssistant(suggestion3.getText());
         });
         suggestionPanel.add(suggestion3);
         
         // Add suggestion panel to AI assistant panel
         panel.add(suggestionPanel, BorderLayout.SOUTH);
+        
+        // 显示初始提示信息
+        aiResponseTextArea.setText("欢迎使用AI助手！目前处于普通对话模式。如需分析您的财务数据，请切换至财务分析模式。");
         
         return panel;
     }
@@ -331,13 +437,37 @@ public class AnalysisPanel extends JPanel {
         summary.append(String.format("Projected Expenses: %.2f\n", avgExpense));
         summary.append(String.format("Projected Savings: %.2f\n\n", avgIncome - avgExpense));
         
+        // 获取基础预算和调整后的预算
+        double baseBudget = mainFrame.getSettings().getMonthlyBudget();
+        double adjustedBudget = budgetAdjustmentService.getAdjustedBudgetForMonth(java.time.YearMonth.from(nextMonth));
+        
+        // 添加预算调整信息
+        summary.append("Budget Information:\n\n");
+        summary.append(String.format("Base Monthly Budget: %.2f\n", baseBudget));
+        
+        if (Math.abs(adjustedBudget - baseBudget) > 0.01) {
+            // 如果有调整，显示调整信息
+            double adjustmentPercentage = ((adjustedBudget / baseBudget) - 1) * 100;
+            summary.append(String.format("Adjusted Budget: %.2f (%.1f%%", adjustedBudget, adjustmentPercentage));
+            
+            if (adjustmentPercentage > 0) {
+                summary.append(" increase");
+            } else {
+                summary.append(" decrease");
+            }
+            
+            summary.append(")\n\n");
+        } else {
+            summary.append("No budget adjustments for next month\n\n");
+        }
+        
         // Get category distribution
         Map<String, Double> categoryDistribution = calculateCategoryDistribution(6);
         
         summary.append("Suggested Budget Allocation:\n\n");
         
         for (Map.Entry<String, Double> entry : categoryDistribution.entrySet()) {
-            double amount = avgExpense * entry.getValue();
+            double amount = adjustedBudget * entry.getValue();
             summary.append(String.format("%s: %.2f (%.1f%%)\n", entry.getKey(), amount, entry.getValue() * 100));
         }
         
@@ -360,25 +490,41 @@ public class AnalysisPanel extends JPanel {
         specialDatesTextArea.setLineWrap(true);
         specialDatesTextArea.setWrapStyleWord(true);
         
-        // Add some example special dates
+        // 创建特殊日期信息
         StringBuilder specialDates = new StringBuilder();
         specialDates.append("Upcoming Special Dates:\n\n");
         
-        // Check if next month is a holiday month
+        // 获取下个月的特殊日期
         Month nextMonthEnum = nextMonth.getMonth();
-        if (nextMonthEnum == Month.JANUARY) {
-            specialDates.append("Chinese New Year is coming up! Expect increased expenses for gifts and celebrations.\n");
-        } else if (nextMonthEnum == Month.FEBRUARY) {
-            specialDates.append("Valentine's Day is coming up! Consider budgeting for gifts or special dinner.\n");
-        } else if (nextMonthEnum == Month.MAY) {
-            specialDates.append("Labor Day holiday is coming up! Consider budgeting for travel or activities.\n");
-        } else if (nextMonthEnum == Month.OCTOBER) {
-            specialDates.append("National Day holiday is coming up! Expect increased expenses for travel and activities.\n");
-        } else if (nextMonthEnum == Month.DECEMBER) {
-            specialDates.append("Christmas and New Year are coming up! Consider budgeting for gifts and celebrations.\n");
+        int nextMonthValue = nextMonth.getMonthValue();
+        List<SpecialDate> nextMonthSpecialDates = specialDateService.findSpecialDatesByMonth(nextMonthValue);
+        
+        if (!nextMonthSpecialDates.isEmpty()) {
+            for (SpecialDate specialDate : nextMonthSpecialDates) {
+                specialDates.append(specialDate.getName())
+                    .append(" (").append(specialDate.getDate().toString()).append("): ")
+                    .append(specialDate.getDescription())
+                    .append("\nBudget Impact: ").append(String.format("%.1f%%", specialDate.getExpectedImpact()))
+                    .append("\n\n");
+            }
         } else {
-            specialDates.append("No major holidays or special events detected for next month.\n");
+            // 如果没有特殊日期，显示默认假日提示
+            if (nextMonthEnum == Month.JANUARY) {
+                specialDates.append("Chinese New Year is coming up! Expect increased expenses for gifts and celebrations.\n");
+            } else if (nextMonthEnum == Month.FEBRUARY) {
+                specialDates.append("Valentine's Day is coming up! Consider budgeting for gifts or special dinner.\n");
+            } else if (nextMonthEnum == Month.MAY) {
+                specialDates.append("Labor Day holiday is coming up! Consider budgeting for travel or activities.\n");
+            } else if (nextMonthEnum == Month.OCTOBER) {
+                specialDates.append("National Day holiday is coming up! Expect increased expenses for travel and activities.\n");
+            } else if (nextMonthEnum == Month.DECEMBER) {
+                specialDates.append("Christmas and New Year are coming up! Consider budgeting for gifts and celebrations.\n");
+            } else {
+                specialDates.append("No major holidays or special events detected for next month.\n");
+            }
         }
+        
+        specialDates.append("\nTip: You can add special dates in the Settings panel to automatically adjust your budget for special events.");
         
         specialDatesTextArea.setText(specialDates.toString());
         
@@ -398,11 +544,12 @@ public class AnalysisPanel extends JPanel {
         if (yearComboBox != null && monthNameComboBox != null) {
             int selectedYear = (int) yearComboBox.getSelectedItem();
             int selectedMonthIndex = monthNameComboBox.getSelectedIndex() + 1;
-            LocalDate selectedDate = LocalDate.of(selectedYear, selectedMonthIndex, 1);
-            updateCurrentMonthView(selectedDate);
+            
+            // 使用财务月计算
+            updateFinancialMonthView(selectedYear, selectedMonthIndex);
         } else {
-            // 如果下拉菜单未初始化，则使用当前日期
-            updateCurrentMonthView(LocalDate.now());
+            // 如果下拉菜单未初始化，则使用当前财务月
+            updateCurrentFinancialMonthView();
         }
     }
     
@@ -412,49 +559,123 @@ public class AnalysisPanel extends JPanel {
      * @param date 日期（月份的第一天）
      */
     private void updateCurrentMonthView(LocalDate date) {
+        // 使用财务月计算
+        updateFinancialMonthView(date.getYear(), date.getMonthValue());
+    }
+    
+    /**
+     * 更新当前财务月视图
+     */
+    private void updateCurrentFinancialMonthView() {
         // 获取选择的类别
         String selectedCategory = (String) categoryComboBox.getSelectedItem();
         boolean allCategories = "All Categories".equals(selectedCategory);
         
-        // 获取交易记录
+        // 获取当前财务月的交易记录
         List<Transaction> allTransactions = transactionService.getAllTransactions();
-        List<Transaction> transactions = new ArrayList<>();
+        Map<String, LocalDate> financialMonthRange = transactionService.getCurrentFinancialMonthRange();
+        LocalDate startDate = financialMonthRange.get("startDate");
+        LocalDate endDate = financialMonthRange.get("endDate");
         
-        // 筛选当月交易
+        // 筛选当前财务月的交易
+        List<Transaction> transactions = new ArrayList<>();
         for (Transaction transaction : allTransactions) {
             LocalDate transactionDate = transaction.getDate();
-            boolean sameMonth = transactionDate.getMonthValue() == date.getMonthValue() 
-                && transactionDate.getYear() == date.getYear();
-                
-            if (sameMonth && (allCategories || selectedCategory.equals(transaction.getCategory()))) {
+            boolean inFinancialMonth = !transactionDate.isBefore(startDate) && !transactionDate.isAfter(endDate);
+            
+            if (inFinancialMonth && (allCategories || selectedCategory.equals(transaction.getCategory()))) {
                 transactions.add(transaction);
             }
         }
         
         // 更新界面
-        updateSummary(transactions, date);
+        updateSummaryForFinancialMonth(transactions, startDate, endDate);
         updateCategoryBreakdown(transactions);
     }
     
     /**
-     * Updates the summary text area.
+     * 更新指定财务月的视图
      * 
-     * @param transactions The transactions to summarize
-     * @param date The date for the summary
+     * @param year 年份
+     * @param month 月份(1-12)
      */
-    private void updateSummary(List<Transaction> transactions, LocalDate date) {
+    private void updateFinancialMonthView(int year, int month) {
+        // 获取选择的类别
+        String selectedCategory = (String) categoryComboBox.getSelectedItem();
+        boolean allCategories = "All Categories".equals(selectedCategory);
+        
+        // 获取指定财务月的日期范围
+        Map<String, LocalDate> financialMonthRange = transactionService.getFinancialMonthRange(year, month);
+        LocalDate startDate = financialMonthRange.get("startDate");
+        LocalDate endDate = financialMonthRange.get("endDate");
+        
+        // 获取交易记录
+        List<Transaction> allTransactions = transactionService.getAllTransactions();
+        List<Transaction> transactions = new ArrayList<>();
+        
+        // 筛选指定财务月的交易
+        for (Transaction transaction : allTransactions) {
+            LocalDate transactionDate = transaction.getDate();
+            boolean inFinancialMonth = !transactionDate.isBefore(startDate) && !transactionDate.isAfter(endDate);
+            
+            if (inFinancialMonth && (allCategories || selectedCategory.equals(transaction.getCategory()))) {
+                transactions.add(transaction);
+            }
+        }
+        
+        // 更新界面
+        updateSummaryForFinancialMonth(transactions, startDate, endDate);
+        updateCategoryBreakdown(transactions);
+    }
+    
+    /**
+     * 为财务月更新摘要信息
+     * 
+     * @param transactions 交易列表
+     * @param startDate 财务月开始日期
+     * @param endDate 财务月结束日期
+     */
+    private void updateSummaryForFinancialMonth(List<Transaction> transactions, LocalDate startDate, LocalDate endDate) {
         StringBuilder summary = new StringBuilder();
         
-        String monthName = date.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault());
-        summary.append("Summary for ").append(monthName).append(" ").append(date.getYear()).append("\n\n");
+        String monthName = startDate.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault());
+        String endMonthName = endDate.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault());
+        
+        // 如果跨月，显示起止日期，否则只显示月份
+        String periodText;
+        if (startDate.getMonth() == endDate.getMonth()) {
+            periodText = monthName + " " + startDate.getYear();
+        } else {
+            periodText = startDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd")) 
+                       + " 至 " 
+                       + endDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
+        }
+        
+        summary.append("财务月统计 (").append(periodText).append(")\n\n");
+        
+        // 显示设置中的财务月起始日
+        SettingsService settingsService = new SettingsService();
+        int monthStartDay = settingsService.getSettings().getMonthStartDay();
+        summary.append("当前财务月起始日设置: 每月").append(monthStartDay).append("日\n\n");
         
         double totalIncome = transactionService.getTotalIncome(transactions);
         double totalExpense = transactionService.getTotalExpense(transactions);
         double netAmount = totalIncome - totalExpense;
         
-        summary.append(String.format("Total Income: %.2f\n", totalIncome));
-        summary.append(String.format("Total Expenses: %.2f\n", totalExpense));
-        summary.append(String.format("Net Amount: %.2f\n\n", netAmount));
+        summary.append(String.format("总收入: %.2f\n", totalIncome));
+        summary.append(String.format("总支出: %.2f\n", totalExpense));
+        summary.append(String.format("净收支: %.2f\n\n", netAmount));
+        
+        // 计算与预算的对比
+        double monthlyBudget = settingsService.getSettings().getMonthlyBudget();
+        double budgetPercentage = monthlyBudget > 0 ? (totalExpense / monthlyBudget) * 100 : 0;
+        
+        summary.append(String.format("月度预算: %.2f\n", monthlyBudget));
+        summary.append(String.format("预算使用: %.1f%%\n", budgetPercentage));
+        
+        if (budgetPercentage > 100) {
+            summary.append("⚠️ 已超出预算 ⚠️\n");
+        }
         
         summaryTextArea.setText(summary.toString());
     }
@@ -509,21 +730,37 @@ public class AnalysisPanel extends JPanel {
      * Asks the AI assistant a question.
      */
     private void askAiAssistant() {
-        String query = aiQueryField.getText();
+        String query = aiQueryField.getText().trim();
         
-        if (query == null || query.trim().isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Please enter a question.", "Error", JOptionPane.ERROR_MESSAGE);
+        if (query.isEmpty()) {
             return;
         }
         
-        // Show loading message
-        aiResponseTextArea.setText("Thinking...");
+        // 清空响应框
+        aiResponseTextArea.setText(isFinancialMode ? 
+                "正在分析您的财务数据和问题，请稍候..." : 
+                "正在处理您的问题，请稍候...");
         
-        // Get AI response in a separate thread
-        SwingWorker<String, Void> worker = new SwingWorker<String, Void>() {
+        // 添加正在处理的指示器
+        aiResponseTextArea.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+        
+        // 启动后台线程获取AI响应
+        SwingWorker<String, Void> worker = new SwingWorker<>() {
             @Override
-            protected String doInBackground() throws Exception {
-                return aiAssistantService.getResponse(query, transactionService);
+            protected String doInBackground() {
+                try {
+                    // 根据模式选择使用哪种对话方式
+                    if (isFinancialMode) {
+                        // 使用带有财务上下文的AI功能
+                        return aiAssistantService.getResponse(query, transactionService);
+                    } else {
+                        // 使用普通对话模式，不包含财务上下文
+                        return aiAssistantService.getChatResponse(query);
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    return "抱歉，处理请求时出现错误：" + e.getMessage();
+                }
             }
             
             @Override
@@ -531,9 +768,78 @@ public class AnalysisPanel extends JPanel {
                 try {
                     String response = get();
                     aiResponseTextArea.setText(response);
+                    
+                    // 如果响应包含错误信息，高亮显示
+                    if (response.contains("错误") || response.contains("抱歉")) {
+                        aiResponseTextArea.setBackground(new Color(255, 240, 240)); // 浅红色背景
+                    } else {
+                        aiResponseTextArea.setBackground(UIManager.getColor("TextArea.background"));
+                    }
                 } catch (Exception e) {
                     e.printStackTrace();
-                    aiResponseTextArea.setText("Error getting response: " + e.getMessage());
+                    aiResponseTextArea.setText("获取响应时出错：" + e.getMessage());
+                    aiResponseTextArea.setBackground(new Color(255, 240, 240)); // 浅红色背景
+                } finally {
+                    aiResponseTextArea.setCursor(Cursor.getDefaultCursor());
+                }
+            }
+        };
+        
+        worker.execute();
+    }
+    
+    /**
+     * 使用带有财务上下文的AI分析功能
+     * 注意：此方法强制使用财务分析模式，无论当前选择的模式是什么
+     * 
+     * @param query 用户查询
+     */
+    private void askFinancialAiAssistant(String query) {
+        if (query.isEmpty()) {
+            return;
+        }
+        
+        // 切换到财务模式
+        financialModeRadio.setSelected(true);
+        isFinancialMode = true;
+        
+        // 清空响应框
+        aiResponseTextArea.setText("正在分析您的财务数据和问题，请稍候...");
+        
+        // 添加正在处理的指示器
+        aiResponseTextArea.setCursor(Cursor.getPredefinedCursor(Cursor.WAIT_CURSOR));
+        
+        // 启动后台线程获取AI响应
+        SwingWorker<String, Void> worker = new SwingWorker<>() {
+            @Override
+            protected String doInBackground() {
+                try {
+                    // 使用带有财务上下文的AI功能
+                    return aiAssistantService.getResponse(query, transactionService);
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    return "抱歉，处理请求时出现错误：" + e.getMessage();
+                }
+            }
+            
+            @Override
+            protected void done() {
+                try {
+                    String response = get();
+                    aiResponseTextArea.setText(response);
+                    
+                    // 如果响应包含错误信息，高亮显示
+                    if (response.contains("错误") || response.contains("抱歉")) {
+                        aiResponseTextArea.setBackground(new Color(255, 240, 240)); // 浅红色背景
+                    } else {
+                        aiResponseTextArea.setBackground(UIManager.getColor("TextArea.background"));
+                    }
+                } catch (Exception e) {
+                    e.printStackTrace();
+                    aiResponseTextArea.setText("获取响应时出错：" + e.getMessage());
+                    aiResponseTextArea.setBackground(new Color(255, 240, 240)); // 浅红色背景
+                } finally {
+                    aiResponseTextArea.setCursor(Cursor.getDefaultCursor());
                 }
             }
         };
@@ -608,5 +914,37 @@ public class AnalysisPanel extends JPanel {
         }
         
         return distribution;
+    }
+    
+    /**
+     * 刷新类别下拉列表
+     */
+    public void refreshCategoryList() {
+        // 保存当前选中的类别
+        String selectedCategory = (String) categoryComboBox.getSelectedItem();
+        
+        // 清空下拉列表
+        categoryComboBox.removeAllItems();
+        
+        // 添加"所有类别"选项
+        categoryComboBox.addItem("All Categories");
+        
+        // 重新添加所有类别
+        for (String category : mainFrame.getSettings().getDefaultCategories()) {
+            categoryComboBox.addItem(category);
+        }
+        
+        // 如果可能，恢复之前选中的类别
+        if (selectedCategory != null) {
+            for (int i = 0; i < categoryComboBox.getItemCount(); i++) {
+                if (selectedCategory.equals(categoryComboBox.getItemAt(i))) {
+                    categoryComboBox.setSelectedIndex(i);
+                    break;
+                }
+            }
+        }
+        
+        // 刷新当前视图
+        updateCurrentMonthView();
     }
 }
