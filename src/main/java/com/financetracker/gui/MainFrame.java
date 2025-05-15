@@ -1,8 +1,10 @@
 package com.financetracker.gui;
 
 import com.financetracker.model.Settings;
+import com.financetracker.service.BudgetAdjustmentService;
 import com.financetracker.service.SettingsService;
-import com.financetracker.gui.AppIcon;
+import com.financetracker.service.SpecialDateService;
+import com.financetracker.service.TransactionService;
 
 import javax.swing.*;
 import java.awt.*;
@@ -27,6 +29,8 @@ public class MainFrame extends JFrame {
 
     private Settings settings;
     private SettingsService settingsService;
+    private SpecialDateService specialDateService;
+    private BudgetAdjustmentService budgetAdjustmentService;
 
     private JPanel navigationPanel;
     private JLabel statusLabel;
@@ -44,6 +48,10 @@ public class MainFrame extends JFrame {
         // Initialize services
         settingsService = new SettingsService();
         settings = settingsService.getSettings();
+        specialDateService = new SpecialDateService();
+        budgetAdjustmentService = new BudgetAdjustmentService(settingsService, specialDateService);
+        // 创建TransactionService实例
+        TransactionService transactionService = new TransactionService();
 
         // Set up the frame
         setTitle("个人财务跟踪器");
@@ -72,7 +80,7 @@ public class MainFrame extends JFrame {
         // Initialize panels
         homePanel = new HomePanel(this);
         transactionPanel = new TransactionPanel(this);
-        analysisPanel = new AnalysisPanel(this);
+        analysisPanel = new AnalysisPanel(transactionService, settingsService, specialDateService, budgetAdjustmentService, this);
         settingsPanel = new SettingsPanel(this);
 
         // Add panels to the content panel
@@ -341,5 +349,56 @@ public class MainFrame extends JFrame {
      */
     public SettingsService getSettingsService() {
         return settingsService;
+    }
+
+    /**
+     * Gets the special date service.
+     * 
+     * @return The special date service
+     */
+    public SpecialDateService getSpecialDateService() {
+        return specialDateService;
+    }
+
+    /**
+     * Gets the budget adjustment service.
+     * 
+     * @return The budget adjustment service
+     */
+    public BudgetAdjustmentService getBudgetAdjustmentService() {
+        return budgetAdjustmentService;
+    }
+
+    /**
+     * 刷新所有面板中的类别列表
+     */
+    public void refreshCategoryLists() {
+        // 每次刷新前重新从设置服务获取最新设置
+        this.settings = settingsService.getSettings();
+        
+        // 通知所有需要刷新类别列表的面板
+        if (transactionPanel != null) {
+            try {
+                transactionPanel.refreshCategoryList();
+            } catch (Exception e) {
+                System.err.println("刷新交易面板类别列表出错: " + e.getMessage());
+            }
+        }
+        
+        if (analysisPanel != null) {
+            try {
+                analysisPanel.refreshCategoryList();
+            } catch (Exception e) {
+                System.err.println("刷新分析面板类别列表出错: " + e.getMessage());
+            }
+        }
+        
+        if (settingsPanel != null) {
+            try {
+                settingsPanel.refreshCategoryList();
+            } catch (Exception e) {
+                System.err.println("刷新设置面板类别列表出错: " + e.getMessage());
+            }
+        }
     }
 }

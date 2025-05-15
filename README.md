@@ -1,4 +1,3 @@
-
 # Personal Finance Tracker
 
 A Java-based personal finance tracking application with AI-assisted analysis.
@@ -199,10 +198,28 @@ java -jar finance-tracker-1.0-SNAPSHOT-jar-with-dependencies.jar
 ## Future Enhancements
 
 See the `FUTURE_ENHANCEMENTS.md` file for planned improvements and feature additions.
-<<<<<<< HEAD
-=======
-# demo3
->>>>>>> 4bdd07bb8ccdf7b92b703f0913793b994dfdc8fc
-=======
 
->>>>>>> d2ca266ad8598d67e1b993bf650eb8b7cfa12ca3
+## AI助手服务配置
+
+为了使AI助手功能正常工作，您需要：
+
+1. 注册OpenRouter账户并获取API密钥：https://openrouter.ai/
+2. 在OpenRouter网站的设置页面中，确保在隐私设置下允许"moderate"和"no-store"策略
+3. 打开`config/config.properties`文件
+4. 设置以下配置项：
+   - `openrouter.api.key`：您的API密钥
+   - `openrouter.http.referer`：HTTP Referer（保持默认即可）
+   - `connection.timeout`和`request.timeout`：根据网络情况调整
+
+配置示例：
+```
+openrouter.api.key=sk-or-v1-your-api-key-here
+openrouter.http.referer=https://financetracker.app
+connection.timeout=60000
+request.timeout=60000
+```
+
+错误排查：
+- "HTTP connect timed out"：检查网络连接或增加超时设置
+- "No endpoints found matching your data policy"：在OpenRouter网站设置中启用数据政策（moderate/no-store）
+- "Invalid JWT form"或API密钥相关错误：确认API密钥是否正确

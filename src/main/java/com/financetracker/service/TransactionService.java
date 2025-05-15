@@ -17,6 +17,7 @@ import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVRecord;
 
+import com.financetracker.model.Settings;
 import com.financetracker.model.Transaction;
 
 /**
@@ -730,5 +731,94 @@ public class TransactionService {
     public TransactionCsvExporter.ExportResult exportTransactionsByMonth() {
         List<Transaction> transactions = getAllTransactions();
         return csvExporter.exportTransactionsByMonth(transactions);
+    }
+
+    /**
+     * 获取当前财务月的开始和结束日期
+     * 这是根据设置中的monthStartDay来定义财务月，而不是自然月
+     * 
+     * @return 包含开始和结束日期的Map
+     */
+    public Map<String, LocalDate> getCurrentFinancialMonthRange() {
+        // 从SettingsService获取Settings
+        SettingsService settingsService = new SettingsService();
+        Settings settings = settingsService.getSettings();
+        int monthStartDay = settings.getMonthStartDay();
+        
+        LocalDate today = LocalDate.now();
+        LocalDate startDate;
+        
+        // 确定当前财务月的开始日期
+        if (today.getDayOfMonth() >= monthStartDay) {
+            // 如果当前日期已过本月的起始日，则财务月从本月的起始日开始
+            startDate = today.withDayOfMonth(monthStartDay);
+        } else {
+            // 如果当前日期在本月起始日之前，则财务月从上个月的起始日开始
+            startDate = today.minusMonths(1).withDayOfMonth(monthStartDay);
+        }
+        
+        // 财务月结束日期是下个财务月开始前一天
+        LocalDate endDate = startDate.plusMonths(1).minusDays(1);
+        
+        Map<String, LocalDate> result = new HashMap<>();
+        result.put("startDate", startDate);
+        result.put("endDate", endDate);
+        
+        return result;
+    }
+
+    /**
+     * 获取当前财务月的交易记录
+     * 使用设置中的monthStartDay而不是自然月
+     * 
+     * @return 当前财务月的交易记录
+     */
+    public List<Transaction> getTransactionsForCurrentFinancialMonth() {
+        Map<String, LocalDate> dateRange = getCurrentFinancialMonthRange();
+        LocalDate startDate = dateRange.get("startDate");
+        LocalDate endDate = dateRange.get("endDate");
+        
+        return getTransactionsForDateRange(startDate, endDate);
+    }
+
+    /**
+     * 获取指定财务月的开始和结束日期
+     * 
+     * @param year 年份
+     * @param month 月份(1-12)
+     * @return 包含开始和结束日期的Map
+     */
+    public Map<String, LocalDate> getFinancialMonthRange(int year, int month) {
+        // 从SettingsService获取Settings
+        SettingsService settingsService = new SettingsService();
+        Settings settings = settingsService.getSettings();
+        int monthStartDay = settings.getMonthStartDay();
+        
+        // 指定月的起始日
+        LocalDate startDate = LocalDate.of(year, month, monthStartDay);
+        
+        // 财务月结束日期是下个财务月开始前一天
+        LocalDate endDate = startDate.plusMonths(1).minusDays(1);
+        
+        Map<String, LocalDate> result = new HashMap<>();
+        result.put("startDate", startDate);
+        result.put("endDate", endDate);
+        
+        return result;
+    }
+
+    /**
+     * 获取指定财务月的交易记录
+     * 
+     * @param year 年份
+     * @param month 月份(1-12)
+     * @return 该财务月的交易记录
+     */
+    public List<Transaction> getTransactionsForFinancialMonth(int year, int month) {
+        Map<String, LocalDate> dateRange = getFinancialMonthRange(year, month);
+        LocalDate startDate = dateRange.get("startDate");
+        LocalDate endDate = dateRange.get("endDate");
+        
+        return getTransactionsForDateRange(startDate, endDate);
     }
 }

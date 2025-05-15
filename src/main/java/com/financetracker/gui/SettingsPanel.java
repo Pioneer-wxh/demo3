@@ -2,14 +2,16 @@ package com.financetracker.gui;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
 import java.time.LocalDate;
-import java.time.format.DateTimeFormatter;
-import java.time.format.DateTimeParseException;
+import java.time.ZoneId;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.List;
 
 import javax.swing.BorderFactory;
@@ -22,15 +24,21 @@ import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
 import javax.swing.JTable;
+import javax.swing.JTextArea;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
+import javax.swing.SpinnerDateModel;
 import javax.swing.SpinnerNumberModel;
+import javax.swing.border.TitledBorder;
 import javax.swing.table.DefaultTableModel;
 
 import com.financetracker.model.Settings;
 import com.financetracker.model.SpecialDate;
+import com.financetracker.model.Transaction;
+import com.financetracker.service.BudgetAdjustmentService;
 import com.financetracker.service.SettingsService;
 import com.financetracker.service.SpecialDateService;
+import com.financetracker.service.TransactionService;
 
 /**
  * Panel for managing application settings.
@@ -40,17 +48,18 @@ public class SettingsPanel extends JPanel {
     private MainFrame mainFrame;
     private SettingsService settingsService;
     private SpecialDateService specialDateService;
+    private BudgetAdjustmentService budgetAdjustmentService;
     
     private JTable specialDatesTable;
     private DefaultTableModel specialDatesTableModel;
     private JTextField specialDateNameField;
-    private JTextField specialDateField;
+    private JSpinner specialDateSpinner;
     private JTextField specialDateDescriptionField;
     private JTextField specialDateCategoriesField;
     private JTextField specialDateImpactField;
     
-    private JTextField budgetAmountField;
-    private JTextField budgetDateField;
+    private JTextField savingsAmountField;
+    private JSpinner savingsDateSpinner;
     
     private JTextField newCategoryField;
     
@@ -64,7 +73,8 @@ public class SettingsPanel extends JPanel {
     public SettingsPanel(MainFrame mainFrame) {
         this.mainFrame = mainFrame;
         this.settingsService = mainFrame.getSettingsService();
-        this.specialDateService = new SpecialDateService();
+        this.specialDateService = mainFrame.getSpecialDateService();
+        this.budgetAdjustmentService = mainFrame.getBudgetAdjustmentService();
         initComponents();
     }
     
@@ -105,9 +115,9 @@ public class SettingsPanel extends JPanel {
         // Add some vertical space
         contentPanel.add(Box.createVerticalStrut(20));
         
-        // Create budget goals panel
-        JPanel budgetGoalsPanel = createBudgetGoalsPanel();
-        contentPanel.add(budgetGoalsPanel);
+        // Create savings goals panel
+        JPanel savingsGoalsPanel = createSavingsGoalsPanel();
+        contentPanel.add(savingsGoalsPanel);
         
         // Add some vertical space
         contentPanel.add(Box.createVerticalStrut(20));
@@ -161,7 +171,7 @@ public class SettingsPanel extends JPanel {
         tablePanel.setLayout(new BorderLayout());
         
         // Create table model with columns
-        String[] columns = {"Name", "Date", "Description", "Affected Categories", "Expected Impact"};
+        String[] columns = {"Name", "Date", "Description", "Affected Categories", "Expected Impact", "Budget Effect"};
         specialDatesTableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
@@ -172,6 +182,11 @@ public class SettingsPanel extends JPanel {
         // Create table
         specialDatesTable = new JTable(specialDatesTableModel);
         specialDatesTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        
+        // Add explanation label
+        JLabel explanationLabel = new JLabel("<html>特殊日期允许您标记特定日期并设置其对预算的影响。<br>正数表示预算增加，负数表示预算减少。</html>");
+        explanationLabel.setBorder(BorderFactory.createEmptyBorder(0, 10, 10, 10));
+        tablePanel.add(explanationLabel, BorderLayout.NORTH);
         
         // Add table to scroll pane
         JScrollPane scrollPane = new JScrollPane(specialDatesTable);
@@ -203,12 +218,16 @@ public class SettingsPanel extends JPanel {
         // Add date field
         gbc.gridx = 0;
         gbc.gridy = 1;
-        formPanel.add(new JLabel("Date (YYYY-MM-DD):"), gbc);
+        formPanel.add(new JLabel("Date:"), gbc);
         
         gbc.gridx = 1;
         gbc.gridy = 1;
-        specialDateField = new JTextField(10);
-        formPanel.add(specialDateField, gbc);
+        Date now = new Date();
+        SpinnerDateModel specialDateModel = new SpinnerDateModel(now, null, null, Calendar.DAY_OF_MONTH);
+        specialDateSpinner = new JSpinner(specialDateModel);
+        JSpinner.DateEditor specialDateEditor = new JSpinner.DateEditor(specialDateSpinner, "yyyy-MM-dd");
+        specialDateSpinner.setEditor(specialDateEditor);
+        formPanel.add(specialDateSpinner, gbc);
         
         // Add description field
         gbc.gridx = 0;
@@ -274,14 +293,14 @@ public class SettingsPanel extends JPanel {
     }
     
     /**
-     * Creates the budget goals panel.
+     * Creates the savings goals panel.
      * 
-     * @return The budget goals panel
+     * @return The savings goals panel
      */
-    private JPanel createBudgetGoalsPanel() {
+    private JPanel createSavingsGoalsPanel() {
         JPanel panel = new JPanel();
         panel.setLayout(new BorderLayout());
-        panel.setBorder(BorderFactory.createTitledBorder("Budget Goals"));
+        panel.setBorder(BorderFactory.createTitledBorder("存款目标"));
         
         // Create form panel
         JPanel formPanel = new JPanel();
@@ -293,43 +312,79 @@ public class SettingsPanel extends JPanel {
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.insets = new Insets(5, 5, 5, 5);
         
-        // Add budget amount field
+        // Add savings amount field
         gbc.gridx = 0;
         gbc.gridy = 0;
-        formPanel.add(new JLabel("Budget Amount:"), gbc);
+        formPanel.add(new JLabel("目标存款金额:"), gbc);
         
         gbc.gridx = 1;
         gbc.gridy = 0;
-        budgetAmountField = new JTextField(10);
-        formPanel.add(budgetAmountField, gbc);
+        savingsAmountField = new JTextField(10);
+        formPanel.add(savingsAmountField, gbc);
         
-        // Add budget date field
+        // Add current savings label
         gbc.gridx = 0;
         gbc.gridy = 1;
-        formPanel.add(new JLabel("Target Date (YYYY-MM-DD):"), gbc);
+        formPanel.add(new JLabel("当前月存款进度:"), gbc);
         
         gbc.gridx = 1;
         gbc.gridy = 1;
-        budgetDateField = new JTextField(10);
-        formPanel.add(budgetDateField, gbc);
+        // 获取本财务月的收支情况
+        double currentSavings = 0.0;
+        try {
+            TransactionService transactionService = new TransactionService();
+            List<Transaction> transactions = transactionService.getTransactionsForCurrentFinancialMonth();
+            double income = transactionService.getTotalIncome(transactions);
+            double expense = transactionService.getTotalExpense(transactions);
+            currentSavings = income - expense;
+        } catch (Exception e) {
+            System.err.println("计算当前存款时出错: " + e.getMessage());
+        }
+        
+        JLabel currentSavingsLabel = new JLabel(String.format("%.2f", currentSavings));
+        currentSavingsLabel.setForeground(currentSavings >= 0 ? Color.BLUE : Color.RED);
+        formPanel.add(currentSavingsLabel, gbc);
+        
+        // Add target date field
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        formPanel.add(new JLabel("目标达成日期:"), gbc);
+        
+        gbc.gridx = 1;
+        gbc.gridy = 2;
+        Date futureDate = Date.from(LocalDate.now().plusMonths(1).atStartOfDay(ZoneId.systemDefault()).toInstant());
+        SpinnerDateModel savingsDateModel = new SpinnerDateModel(futureDate, null, null, Calendar.DAY_OF_MONTH);
+        savingsDateSpinner = new JSpinner(savingsDateModel);
+        JSpinner.DateEditor savingsDateEditor = new JSpinner.DateEditor(savingsDateSpinner, "yyyy-MM-dd");
+        savingsDateSpinner.setEditor(savingsDateEditor);
+        formPanel.add(savingsDateSpinner, gbc);
+        
+        // 添加说明文本
+        gbc.gridx = 0;
+        gbc.gridy = 3;
+        gbc.gridwidth = 2;
+        JLabel explanationLabel = new JLabel("<html>设置您的存款目标和计划达成日期，系统将帮助您追踪进度。</html>");
+        explanationLabel.setFont(new Font("Dialog", Font.ITALIC, 12));
+        explanationLabel.setForeground(Color.DARK_GRAY);
+        formPanel.add(explanationLabel, gbc);
         
         // Create button panel
         JPanel buttonPanel = new JPanel();
         buttonPanel.setLayout(new FlowLayout(FlowLayout.RIGHT));
         
         // Add buttons to button panel
-        JButton setBudgetButton = new JButton("Set Budget Goal");
-        setBudgetButton.addActionListener(e -> setBudgetGoal());
+        JButton setSavingsButton = new JButton("设置存款目标");
+        setSavingsButton.addActionListener(e -> setSavingsGoal());
         
-        buttonPanel.add(setBudgetButton);
+        buttonPanel.add(setSavingsButton);
         
         // Add button panel to form panel
         gbc.gridx = 0;
-        gbc.gridy = 2;
+        gbc.gridy = 4;
         gbc.gridwidth = 2;
         formPanel.add(buttonPanel, gbc);
         
-        // Add form panel to budget goals panel
+        // Add form panel to savings goals panel
         panel.add(formPanel, BorderLayout.CENTER);
         
         return panel;
@@ -349,15 +404,31 @@ public class SettingsPanel extends JPanel {
         JPanel categoriesPanel = new JPanel();
         categoriesPanel.setLayout(new FlowLayout(FlowLayout.LEFT));
         
-        // Add categories
+        // Add categories - 修改为包含删除按钮的形式
         Settings settings = mainFrame.getSettings();
         for (String category : settings.getDefaultCategories()) {
-            JLabel categoryLabel = new JLabel(category);
-            categoryLabel.setBorder(BorderFactory.createCompoundBorder(
+            // 创建类别面板，包含标签和删除按钮
+            JPanel categoryPanel = new JPanel();
+            categoryPanel.setLayout(new FlowLayout(FlowLayout.LEFT, 5, 0));
+            categoryPanel.setBorder(BorderFactory.createCompoundBorder(
                     BorderFactory.createLineBorder(Color.GRAY),
-                    BorderFactory.createEmptyBorder(5, 5, 5, 5)
+                    BorderFactory.createEmptyBorder(2, 5, 2, 5)
             ));
-            categoriesPanel.add(categoryLabel);
+            
+            // 添加类别名称标签
+            JLabel categoryLabel = new JLabel(category);
+            categoryPanel.add(categoryLabel);
+            
+            // 添加删除按钮
+            JButton deleteButton = new JButton("×");
+            deleteButton.setFont(new Font("Arial", Font.BOLD, 10));
+            deleteButton.setMargin(new Insets(0, 3, 0, 3));
+            deleteButton.setToolTipText("删除此类别");
+            deleteButton.addActionListener(e -> deleteCategory(category));
+            categoryPanel.add(deleteButton);
+            
+            // 将类别面板添加到类别容器中
+            categoriesPanel.add(categoryPanel);
         }
         
         // Add categories panel to category management panel
@@ -413,7 +484,7 @@ public class SettingsPanel extends JPanel {
     private JPanel createMonthStartDayPanel() {
         JPanel panel = new JPanel();
         panel.setLayout(new BorderLayout());
-        panel.setBorder(BorderFactory.createTitledBorder("Month Start Day"));
+        panel.setBorder(BorderFactory.createTitledBorder("财务月设置"));
         
         // Create form panel
         JPanel formPanel = new JPanel();
@@ -428,7 +499,7 @@ public class SettingsPanel extends JPanel {
         // Add month start day field
         gbc.gridx = 0;
         gbc.gridy = 0;
-        formPanel.add(new JLabel("Month Start Day:"), gbc);
+        formPanel.add(new JLabel("财务月起始日:"), gbc);
         
         gbc.gridx = 1;
         gbc.gridy = 0;
@@ -441,11 +512,31 @@ public class SettingsPanel extends JPanel {
         monthStartDaySpinner = new JSpinner(spinnerModel);
         formPanel.add(monthStartDaySpinner, gbc);
         
-        // Add description
+        // Add explanation
         gbc.gridx = 0;
         gbc.gridy = 1;
         gbc.gridwidth = 2;
-        formPanel.add(new JLabel("This setting determines when a new \"financial month\" starts."), gbc);
+        JTextArea explanationArea = new JTextArea(
+                "此设置决定了每个「财务月」的开始日期。例如，若设置为15日，则每个财务月\n" +
+                "将从当月15日开始，到下月14日结束。系统将根据这个设置来计算月度预算和\n" +
+                "统计数据，而不是使用自然月（1日到月末）。\n\n" +
+                "这对于与月薪发放日期不一致的情况特别有用，可以更准确地跟踪和规划您的预算。"
+        );
+        explanationArea.setEditable(false);
+        explanationArea.setBackground(panel.getBackground());
+        explanationArea.setFont(new Font("Dialog", Font.PLAIN, 12));
+        explanationArea.setLineWrap(true);
+        explanationArea.setWrapStyleWord(true);
+        explanationArea.setForeground(Color.DARK_GRAY);
+        formPanel.add(explanationArea, gbc);
+        
+        // Add save button
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        gbc.gridwidth = 2;
+        JButton saveFinancialMonthButton = new JButton("保存财务月设置");
+        saveFinancialMonthButton.addActionListener(e -> saveFinancialMonthSettings());
+        formPanel.add(saveFinancialMonthButton, gbc);
         
         // Add form panel to month start day panel
         panel.add(formPanel, BorderLayout.CENTER);
@@ -454,23 +545,30 @@ public class SettingsPanel extends JPanel {
     }
     
     /**
-     * Loads special dates from the data file and displays them in the table.
+     * Loads special dates into the table.
      */
     private void loadSpecialDates() {
-        // Clear the table
+        // Clear table
         specialDatesTableModel.setRowCount(0);
         
-        // Load special dates
+        // Get all special dates
         List<SpecialDate> specialDates = specialDateService.getAllSpecialDates();
         
-        // Add special dates to the table
+        // Add rows to table
         for (SpecialDate specialDate : specialDates) {
+            Settings settings = settingsService.getSettings();
+            double baseBudget = settings.getMonthlyBudget();
+            double impactPercentage = specialDate.getExpectedImpact();
+            double adjustedBudget = baseBudget * (1 + impactPercentage / 100.0);
+            String budgetEffect = String.format("%.2f → %.2f", baseBudget, adjustedBudget);
+            
             Object[] row = {
                 specialDate.getName(),
-                specialDate.getDate().format(DateTimeFormatter.ISO_LOCAL_DATE),
+                specialDate.getDate().toString(),
                 specialDate.getDescription(),
                 specialDate.getAffectedCategoriesAsString(),
-                specialDate.getExpectedImpact()
+                String.format("%.1f%%", specialDate.getExpectedImpact()),
+                budgetEffect
             };
             specialDatesTableModel.addRow(row);
         }
@@ -482,38 +580,44 @@ public class SettingsPanel extends JPanel {
     private void addSpecialDate() {
         try {
             // Parse form data
-            String name = specialDateNameField.getText();
-            LocalDate date = LocalDate.parse(specialDateField.getText(), DateTimeFormatter.ISO_LOCAL_DATE);
-            String description = specialDateDescriptionField.getText();
-            String affectedCategories = specialDateCategoriesField.getText();
-            double expectedImpact = Double.parseDouble(specialDateImpactField.getText());
+            String name = specialDateNameField.getText().trim();
+            
+            // 从日期选择器获取日期
+            Date selectedDate = (Date) specialDateSpinner.getValue();
+            LocalDate date = selectedDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+            
+            String description = specialDateDescriptionField.getText().trim();
+            String categoriesString = specialDateCategoriesField.getText().trim();
+            double impact = Double.parseDouble(specialDateImpactField.getText());
             
             // Validate form data
             if (name.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Please enter a name.", "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "请输入类别名称", "错误", JOptionPane.ERROR_MESSAGE);
                 return;
             }
             
             // Create special date
-            SpecialDate specialDate = new SpecialDate(name, date, description, affectedCategories, expectedImpact);
+            SpecialDate specialDate = new SpecialDate(name, date, description, categoriesString, impact);
             
-            // Save special date
-            specialDateService.addSpecialDate(specialDate);
+            // Add special date
+            boolean success = specialDateService.addSpecialDate(specialDate);
             
-            // Reload special dates
-            loadSpecialDates();
-            
-            // Clear form
-            clearSpecialDateForm();
-            
-            // Show success message
-            JOptionPane.showMessageDialog(this, "Special date added successfully.", "Success", JOptionPane.INFORMATION_MESSAGE);
-        } catch (DateTimeParseException e) {
-            JOptionPane.showMessageDialog(this, "Invalid date format. Please use YYYY-MM-DD.", "Error", JOptionPane.ERROR_MESSAGE);
+            if (success) {
+                // Clear form
+                clearSpecialDateForm();
+                
+                // Reload table
+                loadSpecialDates();
+                
+                // Show success message
+                JOptionPane.showMessageDialog(this, "特殊日期添加成功", "成功", JOptionPane.INFORMATION_MESSAGE);
+            } else {
+                JOptionPane.showMessageDialog(this, "添加特殊日期失败", "错误", JOptionPane.ERROR_MESSAGE);
+            }
         } catch (NumberFormatException e) {
-            JOptionPane.showMessageDialog(this, "Invalid expected impact. Please enter a number.", "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "无效的影响值，请输入数字", "错误", JOptionPane.ERROR_MESSAGE);
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Error adding special date: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "添加特殊日期时出错: " + e.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
         }
     }
     
@@ -523,7 +627,7 @@ public class SettingsPanel extends JPanel {
     private void editSpecialDate() {
         int selectedRow = specialDatesTable.getSelectedRow();
         if (selectedRow == -1) {
-            JOptionPane.showMessageDialog(this, "Please select a special date to edit.", "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "请选择要编辑的特殊日期", "错误", JOptionPane.ERROR_MESSAGE);
             return;
         }
         
@@ -534,7 +638,11 @@ public class SettingsPanel extends JPanel {
             
             // Fill form with special date data
             specialDateNameField.setText(specialDate.getName());
-            specialDateField.setText(specialDate.getDate().format(DateTimeFormatter.ISO_LOCAL_DATE));
+            
+            // 设置日期选择器的值
+            Date specialDateValue = Date.from(specialDate.getDate().atStartOfDay(ZoneId.systemDefault()).toInstant());
+            specialDateSpinner.setValue(specialDateValue);
+            
             specialDateDescriptionField.setText(specialDate.getDescription());
             specialDateCategoriesField.setText(specialDate.getAffectedCategoriesAsString());
             specialDateImpactField.setText(String.valueOf(specialDate.getExpectedImpact()));
@@ -582,46 +690,58 @@ public class SettingsPanel extends JPanel {
      */
     private void clearSpecialDateForm() {
         specialDateNameField.setText("");
-        specialDateField.setText("");
+        specialDateSpinner.setValue(new Date());
         specialDateDescriptionField.setText("");
         specialDateCategoriesField.setText("");
         specialDateImpactField.setText("");
     }
     
     /**
-     * Sets a budget goal.
+     * Sets a savings goal.
      */
-    private void setBudgetGoal() {
+    private void setSavingsGoal() {
         try {
             // Parse form data
-            double amount = Double.parseDouble(budgetAmountField.getText());
-            LocalDate date = LocalDate.parse(budgetDateField.getText(), DateTimeFormatter.ISO_LOCAL_DATE);
+            double amount = Double.parseDouble(savingsAmountField.getText());
+            
+            // 从日期选择器获取日期
+            Date selectedDate = (Date) savingsDateSpinner.getValue();
+            LocalDate date = selectedDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
             
             // Validate form data
             if (amount <= 0) {
-                JOptionPane.showMessageDialog(this, "Please enter a positive amount.", "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "请输入一个正数金额", "错误", JOptionPane.ERROR_MESSAGE);
                 return;
             }
             
             if (date.isBefore(LocalDate.now())) {
-                JOptionPane.showMessageDialog(this, "Please enter a future date.", "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "请输入一个未来的日期", "错误", JOptionPane.ERROR_MESSAGE);
                 return;
             }
             
-            // TODO: Save budget goal
+            // TODO: Save savings goal
+            // 存储到settings中的monthlyBudget字段(复用现有字段)
+            Settings settings = mainFrame.getSettings();
+            settings.setMonthlyBudget(amount);
+            boolean saved = settingsService.setMonthlyBudget(amount);
+            
+            if (!saved) {
+                JOptionPane.showMessageDialog(this, "保存存款目标失败", "错误", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
             
             // Clear form
-            budgetAmountField.setText("");
-            budgetDateField.setText("");
+            savingsAmountField.setText("");
+            // 重置日期选择器为下个月的日期
+            Date futureDate = Date.from(LocalDate.now().plusMonths(1).atStartOfDay(ZoneId.systemDefault()).toInstant());
+            savingsDateSpinner.setValue(futureDate);
             
             // Show success message
-            JOptionPane.showMessageDialog(this, "Budget goal set successfully.", "Success", JOptionPane.INFORMATION_MESSAGE);
-        } catch (DateTimeParseException e) {
-            JOptionPane.showMessageDialog(this, "Invalid date format. Please use YYYY-MM-DD.", "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "存款目标设置成功", "成功", JOptionPane.INFORMATION_MESSAGE);
         } catch (NumberFormatException e) {
-            JOptionPane.showMessageDialog(this, "Invalid amount. Please enter a number.", "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "无效的金额，请输入数字", "错误", JOptionPane.ERROR_MESSAGE);
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Error setting budget goal: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "设置存款目标时出错: " + e.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
         }
     }
     
@@ -630,43 +750,165 @@ public class SettingsPanel extends JPanel {
      */
     private void addCategory() {
         try {
-            // Get category name
+            // 获取类别名称
             String categoryName = newCategoryField.getText();
             
-            // Validate category name
+            // 验证类别名称
             if (categoryName.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Please enter a category name.", "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "请输入类别名称", "错误", JOptionPane.ERROR_MESSAGE);
                 return;
             }
             
-            // Add category to settings
+            // 添加类别到设置
             Settings settings = mainFrame.getSettings();
             List<String> categories = settings.getDefaultCategories();
             
             if (categories.contains(categoryName)) {
-                JOptionPane.showMessageDialog(this, "Category already exists.", "Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "类别已存在", "错误", JOptionPane.ERROR_MESSAGE);
                 return;
             }
             
             categories.add(categoryName);
             settings.setDefaultCategories(categories);
             
-            // Save settings
-            settingsService.getSettings().setDefaultCategories(categories);
-            settingsService.saveSettings();
+            // 保存设置
+            boolean saved = settingsService.setMonthlyBudget(settings.getMonthlyBudget()); // 触发设置保存
+            if (!saved) {
+                JOptionPane.showMessageDialog(this, "保存设置失败", "错误", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
             
-            // Clear form
+            // 清空表单
             newCategoryField.setText("");
             
-            // Show success message
-            JOptionPane.showMessageDialog(this, "Category added successfully.", "Success", JOptionPane.INFORMATION_MESSAGE);
+            // 刷新类别显示
+            refreshCategoryDisplay();
             
-            // Refresh panel
-            mainFrame.setSettings(settings);
-            mainFrame.showPanel("settings");
+            // 刷新所有面板的类别列表
+            mainFrame.refreshCategoryLists();
+            
+            // 显示成功消息
+            JOptionPane.showMessageDialog(this, "类别添加成功", "成功", JOptionPane.INFORMATION_MESSAGE);
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Error adding category: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "添加类别出错: " + e.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
         }
+    }
+    
+    /**
+     * 删除类别
+     * 
+     * @param categoryToDelete 要删除的类别名称
+     */
+    private void deleteCategory(String categoryToDelete) {
+        try {
+            // 确认删除
+            int confirm = JOptionPane.showConfirmDialog(this, 
+                    "确定要删除类别 \"" + categoryToDelete + "\" 吗？\n" + 
+                    "注意：使用此类别的交易记录将保持不变。", 
+                    "确认删除", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+            
+            if (confirm != JOptionPane.YES_OPTION) {
+                return;
+            }
+            
+            // 获取当前类别列表
+            Settings settings = mainFrame.getSettings();
+            List<String> categories = settings.getDefaultCategories();
+            
+            // 检查是否只剩下一个类别，不允许删除所有类别
+            if (categories.size() <= 1) {
+                JOptionPane.showMessageDialog(this, 
+                        "至少需要保留一个类别，无法删除。", 
+                        "无法删除", JOptionPane.ERROR_MESSAGE);
+                return;
+            }
+            
+            // 删除类别
+            if (categories.contains(categoryToDelete)) {
+                categories.remove(categoryToDelete);
+                settings.setDefaultCategories(categories);
+                
+                // 保存设置
+                boolean saved = settingsService.setMonthlyBudget(settings.getMonthlyBudget()); // 触发设置保存
+                if (!saved) {
+                    JOptionPane.showMessageDialog(this, "保存设置失败", "错误", JOptionPane.ERROR_MESSAGE);
+                    return;
+                }
+                
+                // 刷新类别显示
+                refreshCategoryDisplay();
+                
+                // 刷新所有面板的类别列表
+                mainFrame.refreshCategoryLists();
+                
+                // 显示成功消息
+                JOptionPane.showMessageDialog(this, "类别已成功删除", "成功", JOptionPane.INFORMATION_MESSAGE);
+            }
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "删除类别出错: " + e.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+    
+    /**
+     * 刷新类别显示
+     */
+    private void refreshCategoryDisplay() {
+        // 重新创建类别管理面板
+        JPanel contentPanel = (JPanel) ((JScrollPane) getComponent(1)).getViewport().getView();
+        
+        // 尝试找到类别管理面板
+        for (Component component : contentPanel.getComponents()) {
+            if (component instanceof JPanel) {
+                JPanel panel = (JPanel) component;
+                if (panel.getBorder() != null && 
+                    panel.getBorder() instanceof TitledBorder && 
+                    "Category Management".equals(((TitledBorder) panel.getBorder()).getTitle())) {
+                    
+                    // 找到了类别管理面板，现在找到类别显示面板
+                    for (Component innerComp : panel.getComponents()) {
+                        if (innerComp instanceof JPanel && innerComp.getParent() == panel) {
+                            JPanel categoriesPanel = (JPanel) innerComp;
+                            categoriesPanel.removeAll();
+                            
+                            // 添加类别 - 使用与createCategoryManagementPanel相同的方式
+                            Settings settings = mainFrame.getSettings();
+                            for (String category : settings.getDefaultCategories()) {
+                                // 创建类别面板，包含标签和删除按钮
+                                JPanel categoryPanel = new JPanel();
+                                categoryPanel.setLayout(new FlowLayout(FlowLayout.LEFT, 5, 0));
+                                categoryPanel.setBorder(BorderFactory.createCompoundBorder(
+                                        BorderFactory.createLineBorder(Color.GRAY),
+                                        BorderFactory.createEmptyBorder(2, 5, 2, 5)
+                                ));
+                                
+                                // 添加类别名称标签
+                                JLabel categoryLabel = new JLabel(category);
+                                categoryPanel.add(categoryLabel);
+                                
+                                // 添加删除按钮
+                                JButton deleteButton = new JButton("×");
+                                deleteButton.setFont(new Font("Arial", Font.BOLD, 10));
+                                deleteButton.setMargin(new Insets(0, 3, 0, 3));
+                                deleteButton.setToolTipText("删除此类别");
+                                deleteButton.addActionListener(e -> deleteCategory(category));
+                                categoryPanel.add(deleteButton);
+                                
+                                // 将类别面板添加到类别容器中
+                                categoriesPanel.add(categoryPanel);
+                            }
+                            
+                            // 重新验证和绘制面板
+                            categoriesPanel.revalidate();
+                            categoriesPanel.repaint();
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 如果没有找到面板，重新加载整个设置面板
+        mainFrame.showPanel("settings");
     }
     
     /**
@@ -717,5 +959,48 @@ public class SettingsPanel extends JPanel {
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Error saving settings: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
         }
+    }
+    
+    /**
+     * 保存财务月设置
+     */
+    private void saveFinancialMonthSettings() {
+        try {
+            // 获取设置值
+            int monthStartDay = (int) monthStartDaySpinner.getValue();
+            
+            // 更新设置
+            Settings settings = mainFrame.getSettings();
+            settings.setMonthStartDay(monthStartDay);
+            
+            // 保存设置
+            settingsService.getSettings().setMonthStartDay(monthStartDay);
+            boolean saved = settingsService.saveSettings();
+            
+            if (saved) {
+                // 更新主窗口设置
+                mainFrame.setSettings(settings);
+                
+                // 显示成功消息
+                JOptionPane.showMessageDialog(this, 
+                        "财务月设置已保存。系统将使用每月" + monthStartDay + "日作为财务月起始日。", 
+                        "保存成功", JOptionPane.INFORMATION_MESSAGE);
+            } else {
+                JOptionPane.showMessageDialog(this, 
+                        "保存设置失败，请稍后再试。", 
+                        "保存失败", JOptionPane.ERROR_MESSAGE);
+            }
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, 
+                    "保存设置时出错: " + e.getMessage(), 
+                    "错误", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+    
+    /**
+     * 刷新类别列表
+     */
+    public void refreshCategoryList() {
+        refreshCategoryDisplay();
     }
 }

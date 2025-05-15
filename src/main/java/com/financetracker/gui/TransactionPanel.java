@@ -14,8 +14,12 @@ import java.awt.*;
 import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.text.SimpleDateFormat;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Calendar;
+import java.util.Date;
 import java.util.List;
 
 /**
@@ -28,7 +32,7 @@ public class TransactionPanel extends JPanel {
     
     private JTable transactionTable;
     private DefaultTableModel tableModel;
-    private JTextField dateField;
+    private JSpinner dateSpinner;
     private JTextField amountField;
     private JTextField descriptionField;
     private JComboBox<String> categoryComboBox;
@@ -146,13 +150,17 @@ public class TransactionPanel extends JPanel {
         // Add date field
         gbc.gridx = 0;
         gbc.gridy = 0;
-        fieldsPanel.add(new JLabel("Date (YYYY-MM-DD):"), gbc);
+        fieldsPanel.add(new JLabel("Date:"), gbc);
         
         gbc.gridx = 1;
         gbc.gridy = 0;
-        dateField = new JTextField(10);
-        dateField.setText(LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE));
-        fieldsPanel.add(dateField, gbc);
+        // 创建日期选择器替代文本框
+        Date now = new Date();
+        SpinnerDateModel dateModel = new SpinnerDateModel(now, null, null, Calendar.DAY_OF_MONTH);
+        dateSpinner = new JSpinner(dateModel);
+        JSpinner.DateEditor dateEditor = new JSpinner.DateEditor(dateSpinner, "yyyy-MM-dd");
+        dateSpinner.setEditor(dateEditor);
+        fieldsPanel.add(dateSpinner, gbc);
         
         // Add amount field
         gbc.gridx = 0;
@@ -285,8 +293,10 @@ public class TransactionPanel extends JPanel {
      */
     private void addTransaction() {
         try {
-            // Parse form data
-            LocalDate date = LocalDate.parse(dateField.getText(), DateTimeFormatter.ISO_LOCAL_DATE);
+            // 从日期选择器获取日期
+            Date selectedDate = (Date) dateSpinner.getValue();
+            LocalDate date = selectedDate.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+            
             double amount = Double.parseDouble(amountField.getText());
             String description = descriptionField.getText();
             String category = (String) categoryComboBox.getSelectedItem();
@@ -329,8 +339,10 @@ public class TransactionPanel extends JPanel {
         if (selectedRow < transactions.size()) {
             Transaction transaction = transactions.get(selectedRow);
             
-            // Fill form with transaction data
-            dateField.setText(transaction.getDate().format(DateTimeFormatter.ISO_LOCAL_DATE));
+            // 设置日期选择器的值
+            Date transactionDate = Date.from(transaction.getDate().atStartOfDay(ZoneId.systemDefault()).toInstant());
+            dateSpinner.setValue(transactionDate);
+            
             amountField.setText(String.valueOf(transaction.getAmount()));
             descriptionField.setText(transaction.getDescription());
             categoryComboBox.setSelectedItem(transaction.getCategory());
@@ -751,7 +763,9 @@ public class TransactionPanel extends JPanel {
      * Clears the form fields.
      */
     private void clearForm() {
-        dateField.setText(LocalDate.now().format(DateTimeFormatter.ISO_LOCAL_DATE));
+        // 重置日期选择器为当前日期
+        dateSpinner.setValue(new Date());
+        
         amountField.setText("");
         descriptionField.setText("");
         categoryComboBox.setSelectedIndex(0);
@@ -812,6 +826,29 @@ public class TransactionPanel extends JPanel {
             JOptionPane.showMessageDialog(this, 
                     "删除交易记录时出错: " + e.getMessage(), 
                     "错误", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /**
+     * 刷新类别下拉列表
+     */
+    public void refreshCategoryList() {
+        // 保存当前选中的类别
+        String selectedCategory = (String) categoryComboBox.getSelectedItem();
+        
+        // 清空下拉列表
+        categoryComboBox.removeAllItems();
+        
+        // 重新添加所有类别
+        for (String category : mainFrame.getSettings().getDefaultCategories()) {
+            categoryComboBox.addItem(category);
+        }
+        
+        // 如果可能，恢复之前选中的类别
+        if (selectedCategory != null && mainFrame.getSettings().getDefaultCategories().contains(selectedCategory)) {
+            categoryComboBox.setSelectedItem(selectedCategory);
+        } else if (categoryComboBox.getItemCount() > 0) {
+            categoryComboBox.setSelectedIndex(0);
         }
     }
 }
