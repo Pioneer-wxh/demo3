@@ -31,6 +31,7 @@ public class MainFrame extends JFrame {
     private SettingsService settingsService;
     private SpecialDateService specialDateService;
     private BudgetAdjustmentService budgetAdjustmentService;
+    private TransactionService transactionService;
 
     private JPanel navigationPanel;
     private JLabel statusLabel;
@@ -48,10 +49,9 @@ public class MainFrame extends JFrame {
         // Initialize services
         settingsService = new SettingsService();
         settings = settingsService.getSettings();
-        specialDateService = new SpecialDateService();
-        budgetAdjustmentService = new BudgetAdjustmentService(settingsService, specialDateService);
-        // 创建TransactionService实例
-        TransactionService transactionService = new TransactionService();
+        specialDateService = new SpecialDateService(settingsService);
+        budgetAdjustmentService = new BudgetAdjustmentService(settingsService);
+        transactionService = new TransactionService();
 
         // Set up the frame
         setTitle("个人财务跟踪器");
@@ -314,13 +314,32 @@ public class MainFrame extends JFrame {
     }
 
     /**
-     * Shows the specified panel.
-     * 
+     * Shows the specified panel in the content area.
+     *
      * @param panelName The name of the panel to show
      */
     public void showPanel(String panelName) {
         cardLayout.show(contentPanel, panelName);
-        updateNavigationButtons(panelName);
+        updateNavigationButtons(panelName); // Keep navigation buttons in sync
+        updateStatusText("Navigated to " + panelName);
+
+        // Update specific panels when they are shown
+        if ("home".equals(panelName) && homePanel != null) {
+            homePanel.updateRemainingBalance();
+        }
+        if ("analysis".equals(panelName) && analysisPanel != null) {
+            analysisPanel.updateSavingGoalsProgressView(); // Refresh saving goals when analysis panel is shown
+            analysisPanel.refreshCategoryList(); // Refresh category dropdowns
+        }
+        if ("transactions".equals(panelName) && transactionPanel != null) {
+            transactionPanel.loadTransactions(); // Refresh transactions
+            transactionPanel.updateCategoryDropdown(); // Refresh categories in dropdown
+        }
+        if ("settings".equals(panelName) && settingsPanel != null) {
+            settingsPanel.loadSpecialDates(); // Refresh special dates
+            settingsPanel.loadSavingGoals(); // Refresh saving goals
+            settingsPanel.refreshCategoryDisplay(); // Refresh categories
+        }
     }
 
     /**
@@ -367,6 +386,15 @@ public class MainFrame extends JFrame {
      */
     public BudgetAdjustmentService getBudgetAdjustmentService() {
         return budgetAdjustmentService;
+    }
+
+    /**
+     * Gets the transaction service.
+     * 
+     * @return The transaction service
+     */
+    public TransactionService getTransactionService() {
+        return transactionService;
     }
 
     /**

@@ -4,6 +4,7 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import com.financetracker.model.Settings;
 
 /**
  * The home panel that serves as the main menu of the application.
@@ -11,6 +12,7 @@ import java.awt.event.ActionListener;
 public class HomePanel extends JPanel {
     
     private MainFrame mainFrame;
+    private JLabel remainingBalanceLabel;
     
     /**
      * Constructor for HomePanel.
@@ -74,6 +76,12 @@ public class HomePanel extends JPanel {
         JLabel versionLabel = new JLabel("Version 1.0");
         footerPanel.add(versionLabel);
         
+        // Add Remaining Balance display to footer (Task 1.4)
+        footerPanel.add(Box.createHorizontalStrut(20)); // Some spacing
+        remainingBalanceLabel = new JLabel("Remaining Balance: Loading...");
+        remainingBalanceLabel.setFont(new Font("Arial", Font.PLAIN, 14));
+        footerPanel.add(remainingBalanceLabel);
+        
         // Add footer to panel
         add(footerPanel, BorderLayout.SOUTH);
     }
@@ -98,5 +106,38 @@ public class HomePanel extends JPanel {
         });
         
         return button;
+    }
+
+    /**
+     * Updates the remaining balance display.
+     * Called when the panel is shown or relevant data changes.
+     */
+    public void updateRemainingBalance() {
+        if (mainFrame == null || mainFrame.getTransactionService() == null || mainFrame.getSettingsService() == null) {
+            remainingBalanceLabel.setText("Remaining Balance: Error - Services not available");
+            return;
+        }
+
+        Settings settings = mainFrame.getSettingsService().getSettings();
+        if (settings == null) {
+            remainingBalanceLabel.setText("Remaining Balance: Error - Settings not available");
+            return;
+        }
+
+        try {
+            double balance = mainFrame.getTransactionService().calculateRemainingBalanceForCurrentFinancialMonth(settings);
+            String balanceText = String.format("Remaining Balance (Current Financial Month): %.2f %s", balance, settings.getDefaultCurrency());
+            remainingBalanceLabel.setText(balanceText);
+            if (balance < 0) {
+                remainingBalanceLabel.setForeground(Color.RED);
+            } else {
+                remainingBalanceLabel.setForeground(Color.BLUE); // Or UIManager.getColor("Label.foreground") for default
+            }
+        } catch (Exception e) {
+            System.err.println("Error calculating or displaying remaining balance: " + e.getMessage());
+            e.printStackTrace();
+            remainingBalanceLabel.setText("Remaining Balance: Error");
+            remainingBalanceLabel.setForeground(Color.RED);
+        }
     }
 }

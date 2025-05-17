@@ -6,6 +6,10 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
+// Added imports for new model classes
+import com.financetracker.model.SpecialDate;
+import com.financetracker.model.SavingGoal;
+
 /**
  * 应用程序设置类
  */
@@ -16,13 +20,18 @@ public class Settings implements Serializable {
     private String defaultCurrency; // Default currency for transactions
     private String dateFormat; // Preferred date format
     private boolean darkModeEnabled; // UI theme preference
-    private List<String> defaultCategories; // List of default category names
+    private List<String> expenseCategories;
+    private List<String> incomeCategories;
     private String dataStoragePath; // Path where data files are stored
     private boolean autoBackupEnabled; // Whether to automatically backup data
     private int backupFrequencyDays; // How often to backup data (in days)
     private boolean aiAssistanceEnabled; // Whether AI features are enabled
     private double monthlyBudget;
     private int budgetStartDay;
+
+    // New fields for Special Dates and Saving Goals
+    private List<SpecialDate> specialDates;
+    private List<SavingGoal> savingGoals;
     
     /**
      * 默认构造函数
@@ -33,15 +42,28 @@ public class Settings implements Serializable {
         this.defaultCurrency = "CNY";
         this.dateFormat = "yyyy-MM-dd";
         this.darkModeEnabled = false;
-        this.defaultCategories = new ArrayList<>(Arrays.asList(
-            "餐饮", "购物", "交通", "住房", "娱乐", "医疗", "教育", "通讯", "其他"
+        
+        // Initialize default expense categories
+        this.expenseCategories = new ArrayList<>(Arrays.asList(
+            "Food", "Shopping", "Transportation", "Housing", "Entertainment", 
+            "Healthcare", "Education", "Communication", "Utilities", "Clothing", 
+            "Savings", "Others" // Added Savings here as an expense category
         ));
+        // Initialize default income categories
+        this.incomeCategories = new ArrayList<>(Arrays.asList(
+            "Salary", "Bonus", "Investment", "Gift", "Freelance/Part-time", "Other Income"
+        ));
+        
         this.dataStoragePath = "data/";
         this.autoBackupEnabled = true;
         this.backupFrequencyDays = 7;
         this.aiAssistanceEnabled = true;
         this.monthlyBudget = 5000.0;
         this.budgetStartDay = 1;
+
+        // Initialize new lists
+        this.specialDates = new ArrayList<>();
+        this.savingGoals = new ArrayList<>();
     }
 
     // Getters and Setters
@@ -80,12 +102,26 @@ public class Settings implements Serializable {
         this.darkModeEnabled = darkModeEnabled;
     }
 
-    public List<String> getDefaultCategories() {
-        return defaultCategories;
+    public List<String> getExpenseCategories() {
+        if (this.expenseCategories == null) { // Defensive null check
+            this.expenseCategories = new ArrayList<>();
+        }
+        return expenseCategories;
     }
 
-    public void setDefaultCategories(List<String> defaultCategories) {
-        this.defaultCategories = defaultCategories;
+    public void setExpenseCategories(List<String> expenseCategories) {
+        this.expenseCategories = expenseCategories;
+    }
+
+    public List<String> getIncomeCategories() {
+        if (this.incomeCategories == null) { // Defensive null check
+            this.incomeCategories = new ArrayList<>();
+        }
+        return incomeCategories;
+    }
+
+    public void setIncomeCategories(List<String> incomeCategories) {
+        this.incomeCategories = incomeCategories;
     }
 
     public String getDataStoragePath() {
@@ -156,28 +192,42 @@ public class Settings implements Serializable {
     /**
      * 添加默认分类
      */
-    public void addDefaultCategory(String category) {
-        if (!defaultCategories.contains(category)) {
-            defaultCategories.add(category);
+    public void addExpenseCategory(String category) {
+        if (category != null && !category.trim().isEmpty() && !this.expenseCategories.contains(category.trim())) {
+            this.expenseCategories.add(category.trim());
         }
     }
     
     /**
      * 删除默认分类
      */
-    public boolean removeDefaultCategory(String category) {
-        return defaultCategories.remove(category);
+    public boolean removeExpenseCategory(String category) {
+        return this.expenseCategories.remove(category);
     }
     
     /**
      * 重置为默认设置
      */
     public void resetToDefault() {
+        this.monthStartDay = 1;
+        this.defaultCurrency = "CNY";
+        this.dateFormat = "yyyy-MM-dd";
+        this.darkModeEnabled = false;
+        // Reset to new default categories
+        this.expenseCategories = new ArrayList<>(Arrays.asList(
+            "Food", "Shopping", "Transportation", "Housing", "Entertainment", 
+            "Healthcare", "Education", "Communication", "Utilities", "Clothing", 
+            "Savings", "Others"
+        ));
+        this.incomeCategories = new ArrayList<>(Arrays.asList(
+            "Salary", "Bonus", "Investment", "Gift", "Freelance/Part-time", "Other Income"
+        ));
+        this.dataStoragePath = "data/";
+        this.autoBackupEnabled = true;
         this.monthlyBudget = 5000.0;
         this.budgetStartDay = 1;
-        this.defaultCategories = new ArrayList<>(Arrays.asList(
-            "餐饮", "购物", "交通", "住房", "娱乐", "医疗", "教育", "通讯", "其他"
-        ));
+        this.specialDates = new ArrayList<>();
+        this.savingGoals = new ArrayList<>();
     }
     
     /**
@@ -204,5 +254,100 @@ public class Settings implements Serializable {
         
         // Check if the date is within the current financial month
         return !date.isBefore(currentMonthStart) && date.isBefore(nextMonthStart);
+    }
+
+    // --- SpecialDate Management ---
+    public List<SpecialDate> getSpecialDates() {
+        if (this.specialDates == null) { // Ensure list is not null
+            this.specialDates = new ArrayList<>();
+        }
+        return specialDates;
+    }
+
+    public void setSpecialDates(List<SpecialDate> specialDates) {
+        this.specialDates = specialDates;
+    }
+
+    public void addSpecialDate(SpecialDate specialDate) {
+        if (specialDate != null) {
+            if (this.specialDates == null) {
+                this.specialDates = new ArrayList<>();
+            }
+            // Avoid duplicates by ID if necessary, or allow multiple with same name
+            if (!this.specialDates.stream().anyMatch(sd -> sd.getId().equals(specialDate.getId()))) {
+                 this.specialDates.add(specialDate);
+            } else {
+                // Update existing one if ID matches
+                updateSpecialDate(specialDate);
+            }
+        }
+    }
+
+    public boolean removeSpecialDate(String specialDateId) {
+        if (this.specialDates == null || specialDateId == null) return false;
+        return this.specialDates.removeIf(sd -> sd.getId().equals(specialDateId));
+    }
+
+    public void updateSpecialDate(SpecialDate specialDateToUpdate) {
+        if (this.specialDates == null || specialDateToUpdate == null) return;
+        for (int i = 0; i < this.specialDates.size(); i++) {
+            if (this.specialDates.get(i).getId().equals(specialDateToUpdate.getId())) {
+                this.specialDates.set(i, specialDateToUpdate);
+                return;
+            }
+        }
+        // If not found by ID, add it (optional behavior)
+        // this.specialDates.add(specialDateToUpdate);
+    }
+
+    // --- SavingGoal Management ---
+    public List<SavingGoal> getSavingGoals() {
+        if (this.savingGoals == null) { // Ensure list is not null
+            this.savingGoals = new ArrayList<>();
+        }
+        return savingGoals;
+    }
+
+    public void setSavingGoals(List<SavingGoal> savingGoals) {
+        this.savingGoals = savingGoals;
+    }
+
+    public void addSavingGoal(SavingGoal savingGoal) {
+        if (savingGoal != null) {
+            if (this.savingGoals == null) {
+                this.savingGoals = new ArrayList<>();
+            }
+            if (!this.savingGoals.stream().anyMatch(sg -> sg.getId().equals(savingGoal.getId()))) {
+                this.savingGoals.add(savingGoal);
+            } else {
+                updateSavingGoal(savingGoal);
+            }
+        }
+    }
+
+    public boolean removeSavingGoal(String savingGoalId) {
+        if (this.savingGoals == null || savingGoalId == null) return false;
+        return this.savingGoals.removeIf(sg -> sg.getId().equals(savingGoalId));
+    }
+
+    public void updateSavingGoal(SavingGoal savingGoalToUpdate) {
+        if (this.savingGoals == null || savingGoalToUpdate == null) return;
+        for (int i = 0; i < this.savingGoals.size(); i++) {
+            if (this.savingGoals.get(i).getId().equals(savingGoalToUpdate.getId())) {
+                this.savingGoals.set(i, savingGoalToUpdate);
+                return;
+            }
+        }
+    }
+
+    // Methods to manage income categories
+    public void addIncomeCategory(String category) {
+        if (category != null && !category.trim().isEmpty() && !this.incomeCategories.contains(category.trim())) {
+            this.incomeCategories.add(category.trim());
+        }
+    }
+
+    public boolean removeIncomeCategory(String category) {
+        return this.incomeCategories.remove(category);
     }
 }

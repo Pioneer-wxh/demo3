@@ -2,12 +2,15 @@ package com.financetracker.gui;
 
 import java.awt.BorderLayout;
 import java.awt.Color;
+import java.awt.Component;
 import java.awt.Cursor;
+import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.event.ActionListener;
 import java.time.LocalDate;
 import java.time.Month;
+import java.time.YearMonth;
 import java.time.format.DateTimeFormatter;
 import java.time.format.TextStyle;
 import java.util.ArrayList;
@@ -17,11 +20,14 @@ import java.util.Locale;
 import java.util.Map;
 
 import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
 import javax.swing.ButtonGroup;
 import javax.swing.JButton;
 import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JPanel;
+import javax.swing.JProgressBar;
 import javax.swing.JRadioButton;
 import javax.swing.JScrollPane;
 import javax.swing.JTabbedPane;
@@ -32,6 +38,8 @@ import javax.swing.UIManager;
 
 import com.financetracker.ai.AiAssistantService;
 import com.financetracker.ai.CsvDataReader;
+import com.financetracker.model.SavingGoal;
+import com.financetracker.model.Settings;
 import com.financetracker.model.SpecialDate;
 import com.financetracker.model.Transaction;
 import com.financetracker.service.BudgetAdjustmentService;
@@ -54,6 +62,7 @@ public class AnalysisPanel extends JPanel {
     private JPanel currentMonthPanel;
     private JPanel aiAssistantPanel;
     private JPanel budgetPanel;
+    private JPanel savingGoalsProgressPanel;
     
     private JTextArea summaryTextArea;
     private JTextArea categoryBreakdownTextArea;
@@ -81,7 +90,7 @@ public class AnalysisPanel extends JPanel {
         this.settingsService = settingsService;
         this.specialDateService = specialDateService;
         this.budgetAdjustmentService = budgetAdjustmentService;
-        this.aiAssistantService = new AiAssistantService();
+        this.aiAssistantService = new AiAssistantService(settingsService);
         
         // 设置CsvDataReader的TransactionService
         CsvDataReader.setTransactionService(transactionService);
@@ -106,7 +115,7 @@ public class AnalysisPanel extends JPanel {
         this.specialDateService = specialDateService;
         this.budgetAdjustmentService = budgetAdjustmentService;
         this.mainFrame = mainFrame;
-        this.aiAssistantService = new AiAssistantService();
+        this.aiAssistantService = new AiAssistantService(settingsService);
         
         // 设置CsvDataReader的TransactionService
         CsvDataReader.setTransactionService(transactionService);
@@ -153,6 +162,10 @@ public class AnalysisPanel extends JPanel {
         // Create budget panel
         budgetPanel = createBudgetPanel();
         tabbedPane.addTab("Budget of Next Month", budgetPanel);
+        
+        // Create Saving Goals Progress panel
+        savingGoalsProgressPanel = createSavingGoalsProgressPanel();
+        tabbedPane.addTab("Saving Goals", savingGoalsProgressPanel);
         
         // Add tab panel to main panel
         add(tabbedPane, BorderLayout.CENTER);
@@ -209,8 +222,27 @@ public class AnalysisPanel extends JPanel {
         filterPanel.add(new JLabel("Category:"));
         categoryComboBox = new JComboBox<>();
         categoryComboBox.addItem("All Categories");
-        for (String category : mainFrame.getSettings().getDefaultCategories()) {
-            categoryComboBox.addItem(category);
+        if (mainFrame != null && mainFrame.getSettings() != null) {
+            Settings settings = mainFrame.getSettings();
+            if (settings.getExpenseCategories() != null) {
+                for (String category : settings.getExpenseCategories()) {
+                    categoryComboBox.addItem(category);
+                }
+            }
+            if (settings.getIncomeCategories() != null) {
+                for (String category : settings.getIncomeCategories()) {
+                    boolean exists = false;
+                    for (int i = 0; i < categoryComboBox.getItemCount(); i++) {
+                        if (category.equals(categoryComboBox.getItemAt(i))) {
+                            exists = true;
+                            break;
+                        }
+                    }
+                    if (!exists) {
+                        categoryComboBox.addItem(category);
+                    }
+                }
+            }
         }
         categoryComboBox.addActionListener(e -> updateCurrentMonthView());
         filterPanel.add(categoryComboBox);
@@ -412,7 +444,7 @@ public class AnalysisPanel extends JPanel {
         // Create budget summary panel
         JPanel budgetSummaryPanel = new JPanel();
         budgetSummaryPanel.setLayout(new BorderLayout());
-        budgetSummaryPanel.setBorder(BorderFactory.createTitledBorder("Budget Summary"));
+        budgetSummaryPanel.setBorder(BorderFactory.createTitledBorder("Budget Forecast & Adjustments"));
         
         // Add budget summary text area
         JTextArea budgetSummaryTextArea = new JTextArea();
@@ -420,121 +452,219 @@ public class AnalysisPanel extends JPanel {
         budgetSummaryTextArea.setLineWrap(true);
         budgetSummaryTextArea.setWrapStyleWord(true);
         
-        // Generate budget summary
         LocalDate today = LocalDate.now();
-        LocalDate nextMonth = today.plusMonths(1);
-        String monthName = nextMonth.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault());
+        YearMonth nextMonthYearMonth = YearMonth.from(today.plusMonths(1));
+        String monthName = nextMonthYearMonth.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault());
         
         StringBuilder summary = new StringBuilder();
-        summary.append("Budget Forecast for ").append(monthName).append(" ").append(nextMonth.getYear()).append("\n\n");
+        summary.append("Budget Forecast for ").append(monthName).append(" ").append(nextMonthYearMonth.getYear()).append("\n\n");
         
         // Calculate average income and expenses from past 6 months
+        // This is a simplistic projection, actual budget should primarily come from settings.
         double avgIncome = calculateAverageIncome(6);
         double avgExpense = calculateAverageExpense(6);
         
-        summary.append("Based on your past 6 months of transactions:\n\n");
-        summary.append(String.format("Projected Income: %.2f\n", avgIncome));
-        summary.append(String.format("Projected Expenses: %.2f\n", avgExpense));
-        summary.append(String.format("Projected Savings: %.2f\n\n", avgIncome - avgExpense));
+        summary.append("Based on your past 6 months of transactions (for context only):\n");
+        summary.append(String.format("- Projected Average Income: %.2f\n", avgIncome));
+        summary.append(String.format("- Projected Average Expenses: %.2f\n", avgExpense));
+        summary.append(String.format("- Projected Average Savings: %.2f\n\n", avgIncome - avgExpense));
         
-        // 获取基础预算和调整后的预算
-        double baseBudget = mainFrame.getSettings().getMonthlyBudget();
-        double adjustedBudget = budgetAdjustmentService.getAdjustedBudgetForMonth(java.time.YearMonth.from(nextMonth));
-        
-        // 添加预算调整信息
-        summary.append("Budget Information:\n\n");
-        summary.append(String.format("Base Monthly Budget: %.2f\n", baseBudget));
-        
-        if (Math.abs(adjustedBudget - baseBudget) > 0.01) {
-            // 如果有调整，显示调整信息
-            double adjustmentPercentage = ((adjustedBudget / baseBudget) - 1) * 100;
-            summary.append(String.format("Adjusted Budget: %.2f (%.1f%%", adjustedBudget, adjustmentPercentage));
-            
-            if (adjustmentPercentage > 0) {
-                summary.append(" increase");
-            } else {
-                summary.append(" decrease");
-            }
-            
-            summary.append(")\n\n");
+        // Get base budget from settings
+        Settings currentSettings = settingsService.getSettings();
+        double baseBudget = 0.0;
+        String currency = "";
+        if (currentSettings != null) {
+            baseBudget = currentSettings.getMonthlyBudget();
+            currency = currentSettings.getDefaultCurrency();
+            summary.append(String.format("Base Monthly Budget (from Settings): %.2f %s\n", baseBudget, currency));
         } else {
-            summary.append("No budget adjustments for next month\n\n");
+            summary.append("Base Monthly Budget: Not Set\n");
         }
         
-        // Get category distribution
-        Map<String, Double> categoryDistribution = calculateCategoryDistribution(6);
+        // Get category-specific adjustments for next month
+        Map<String, Double> categoryAdjustments = budgetAdjustmentService.getCategoryAdjustmentsForMonth(nextMonthYearMonth);
+        double totalAdjustments = 0;
         
-        summary.append("Suggested Budget Allocation:\n\n");
+        if (!categoryAdjustments.isEmpty()) {
+            summary.append("\nSpecial Date Adjustments for Next Month:\n");
+            for (Map.Entry<String, Double> entry : categoryAdjustments.entrySet()) {
+                summary.append(String.format("- %s: +%.2f %s\n", entry.getKey(), entry.getValue(), currency));
+                totalAdjustments += entry.getValue();
+            }
+            summary.append(String.format("Total Increase from Special Dates: %.2f %s\n", totalAdjustments, currency));
+        } else {
+            summary.append("\nNo specific budget adjustments from Special Dates for next month.\n");
+        }
         
-        for (Map.Entry<String, Double> entry : categoryDistribution.entrySet()) {
-            double amount = adjustedBudget * entry.getValue();
-            summary.append(String.format("%s: %.2f (%.1f%%)\n", entry.getKey(), amount, entry.getValue() * 100));
+        double finalBudget = baseBudget + totalAdjustments;
+        summary.append(String.format("\nProjected Total Budget for Next Month: %.2f %s\n", finalBudget, currency));
+        
+        // Suggested Budget Allocation (can be more sophisticated later)
+        // For now, just lists categories. A true allocation would use the finalBudget.
+        if (currentSettings != null && currentSettings.getExpenseCategories() != null && !currentSettings.getExpenseCategories().isEmpty()) {
+            summary.append("\nDefault Expense Categories (for planning):\n");
+            for(String cat : currentSettings.getExpenseCategories()){
+                summary.append("- ").append(cat).append("\n");
+            }
         }
         
         budgetSummaryTextArea.setText(summary.toString());
-        
         JScrollPane budgetSummaryScrollPane = new JScrollPane(budgetSummaryTextArea);
         budgetSummaryPanel.add(budgetSummaryScrollPane, BorderLayout.CENTER);
-        
-        // Add budget summary panel to budget panel
         panel.add(budgetSummaryPanel, BorderLayout.CENTER);
         
-        // Create special dates panel
-        JPanel specialDatesPanel = new JPanel();
-        specialDatesPanel.setLayout(new BorderLayout());
-        specialDatesPanel.setBorder(BorderFactory.createTitledBorder("Special Dates"));
-        
-        // Add special dates text area
+        // Special Dates Display Panel (as a side or bottom panel)
+        JPanel specialDatesDisplayPanel = new JPanel(new BorderLayout());
+        specialDatesDisplayPanel.setBorder(BorderFactory.createTitledBorder("Upcoming Special Dates in " + monthName));
         JTextArea specialDatesTextArea = new JTextArea();
         specialDatesTextArea.setEditable(false);
         specialDatesTextArea.setLineWrap(true);
         specialDatesTextArea.setWrapStyleWord(true);
         
-        // 创建特殊日期信息
-        StringBuilder specialDates = new StringBuilder();
-        specialDates.append("Upcoming Special Dates:\n\n");
-        
-        // 获取下个月的特殊日期
-        Month nextMonthEnum = nextMonth.getMonth();
-        int nextMonthValue = nextMonth.getMonthValue();
-        List<SpecialDate> nextMonthSpecialDates = specialDateService.findSpecialDatesByMonth(nextMonthValue);
-        
-        if (!nextMonthSpecialDates.isEmpty()) {
-            for (SpecialDate specialDate : nextMonthSpecialDates) {
-                specialDates.append(specialDate.getName())
-                    .append(" (").append(specialDate.getDate().toString()).append("): ")
-                    .append(specialDate.getDescription())
-                    .append("\nBudget Impact: ").append(String.format("%.1f%%", specialDate.getExpectedImpact()))
-                    .append("\n\n");
-            }
-        } else {
-            // 如果没有特殊日期，显示默认假日提示
-            if (nextMonthEnum == Month.JANUARY) {
-                specialDates.append("Chinese New Year is coming up! Expect increased expenses for gifts and celebrations.\n");
-            } else if (nextMonthEnum == Month.FEBRUARY) {
-                specialDates.append("Valentine's Day is coming up! Consider budgeting for gifts or special dinner.\n");
-            } else if (nextMonthEnum == Month.MAY) {
-                specialDates.append("Labor Day holiday is coming up! Consider budgeting for travel or activities.\n");
-            } else if (nextMonthEnum == Month.OCTOBER) {
-                specialDates.append("National Day holiday is coming up! Expect increased expenses for travel and activities.\n");
-            } else if (nextMonthEnum == Month.DECEMBER) {
-                specialDates.append("Christmas and New Year are coming up! Consider budgeting for gifts and celebrations.\n");
-            } else {
-                specialDates.append("No major holidays or special events detected for next month.\n");
+        StringBuilder specialDatesInfo = new StringBuilder();
+        List<SpecialDate> allSpecialDates = currentSettings != null ? currentSettings.getSpecialDates() : new ArrayList<>();
+        boolean foundForNextMonth = false;
+        if (allSpecialDates != null) {
+            for (SpecialDate sd : allSpecialDates) {
+                LocalDate occurrence = sd.getNextOccurrence(nextMonthYearMonth.atDay(1));
+                if (occurrence != null && YearMonth.from(occurrence).equals(nextMonthYearMonth)) {
+                    if (!foundForNextMonth) {
+                        specialDatesInfo.append("The following special dates fall in ").append(monthName).append(":\n");
+                        foundForNextMonth = true;
+                    }
+                    specialDatesInfo.append(String.format("- %s (%s): %s. Affects '%s' by +%.2f %s.\n",
+                            sd.getName(),
+                            occurrence.format(DateTimeFormatter.ISO_LOCAL_DATE),
+                            sd.getDescription() != null ? sd.getDescription() : "No description",
+                            sd.getAffectedCategory(),
+                            sd.getAmountIncrease(), // Corrected method
+                            currency
+                    ));
+                }
             }
         }
+        if (!foundForNextMonth) {
+            specialDatesInfo.append("No user-defined special dates found for ").append(monthName).append(".\n");
+        }
+        // Add default holiday tips (can be removed or enhanced)
+        // ... (existing holiday tip logic can be kept or removed based on preference) ...
+        specialDatesInfo.append("\nTip: You can add/manage special dates in the Settings panel.");
         
-        specialDates.append("\nTip: You can add special dates in the Settings panel to automatically adjust your budget for special events.");
+        specialDatesTextArea.setText(specialDatesInfo.toString());
+        specialDatesDisplayPanel.add(new JScrollPane(specialDatesTextArea), BorderLayout.CENTER);
         
-        specialDatesTextArea.setText(specialDates.toString());
-        
-        JScrollPane specialDatesScrollPane = new JScrollPane(specialDatesTextArea);
-        specialDatesPanel.add(specialDatesScrollPane, BorderLayout.CENTER);
-        
-        // Add special dates panel to budget panel
-        panel.add(specialDatesPanel, BorderLayout.EAST);
+        // Adding special dates display panel to the right (EAST) or bottom (SOUTH)
+        // For this layout, let's try adding it to the EAST.
+        // panel.add(specialDatesDisplayPanel, BorderLayout.EAST); 
+        // Or if EAST is too crowded, consider placing it in a separate tab or below the main summary.
+        // For now, let's put it below.
+        panel.add(specialDatesDisplayPanel, BorderLayout.SOUTH);
         
         return panel;
+    }
+    
+    /**
+     * Creates the panel for displaying saving goals progress.
+     * @return The saving goals progress panel.
+     */
+    private JPanel createSavingGoalsProgressPanel() {
+        JPanel panel = new JPanel(new BorderLayout());
+        panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        // Main content panel that will hold individual goal panels
+        JPanel goalsDisplayArea = new JPanel();
+        goalsDisplayArea.setLayout(new BoxLayout(goalsDisplayArea, BoxLayout.Y_AXIS));
+        
+        JScrollPane scrollPane = new JScrollPane(goalsDisplayArea);
+        panel.add(scrollPane, BorderLayout.CENTER);
+
+        // Button to refresh
+        JButton refreshButton = new JButton("Refresh Goals Progress");
+        refreshButton.addActionListener(e -> updateSavingGoalsProgressView());
+        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        buttonPanel.add(refreshButton);
+        panel.add(buttonPanel, BorderLayout.SOUTH);
+        
+        // Initial population
+        // updateSavingGoalsProgressView(); // Call this when panel is shown or data is expected to be fresh
+        // Deferring initial call to when tab might be selected, or a refresh button is clicked
+        // to avoid premature loading if settings are not ready.
+        return panel;
+    }
+
+    public void updateSavingGoalsProgressView() {
+        if (settingsService == null || settingsService.getSettings() == null) {
+            return;
+        }
+        Settings settings = settingsService.getSettings();
+        List<SavingGoal> goals = settings.getSavingGoals();
+
+        // Find the goalsDisplayArea panel within the savingGoalsProgressPanel structure
+        JPanel goalsDisplayArea = null;
+        if (savingGoalsProgressPanel != null && savingGoalsProgressPanel.getComponentCount() > 0) {
+            Component centerComponent = ((BorderLayout)savingGoalsProgressPanel.getLayout()).getLayoutComponent(BorderLayout.CENTER);
+            if (centerComponent instanceof JScrollPane) {
+                JScrollPane scrollPane = (JScrollPane) centerComponent;
+                goalsDisplayArea = (JPanel) scrollPane.getViewport().getView();
+            }
+        }
+        if (goalsDisplayArea == null) {
+            System.err.println("Could not find goalsDisplayArea to update saving goals progress.");
+            return; // Should not happen if panel is constructed correctly
+        }
+
+        goalsDisplayArea.removeAll(); // Clear previous goals
+
+        if (goals != null) {
+            for (SavingGoal goal : goals) {
+                if (!goal.isActive()) { // Display only active goals
+                    continue;
+                }
+
+                JPanel goalPanel = new JPanel(new BorderLayout(5, 5));
+                goalPanel.setBorder(BorderFactory.createTitledBorder(goal.getName()));
+
+                JPanel detailsPanel = new JPanel();
+                detailsPanel.setLayout(new BoxLayout(detailsPanel, BoxLayout.Y_AXIS));
+
+                detailsPanel.add(new JLabel(String.format("Target: %.2f", goal.getTargetAmount())));
+                detailsPanel.add(new JLabel(String.format("Current: %.2f (%.2f%%)", 
+                                                          goal.getCurrentAmount(), 
+                                                          goal.getTargetAmount() > 0 ? (goal.getCurrentAmount() / goal.getTargetAmount() * 100) : 0)));
+                detailsPanel.add(new JLabel(String.format("Monthly Contribution: %.2f", goal.getMonthlyContribution())));
+                
+                if (goal.getStartDate() != null) {
+                    detailsPanel.add(new JLabel("Start Date: " + goal.getStartDate().format(DateTimeFormatter.ISO_LOCAL_DATE)));
+                }
+                if (goal.getTargetDate() != null) {
+                    detailsPanel.add(new JLabel("Target Date: " + goal.getTargetDate().format(DateTimeFormatter.ISO_LOCAL_DATE)));
+                } else {
+                    // Estimate completion if possible
+                    if (goal.getMonthlyContribution() > 0 && goal.getTargetAmount() > goal.getCurrentAmount()) {
+                        double remainingAmount = goal.getTargetAmount() - goal.getCurrentAmount();
+                        double monthsToTarget = Math.ceil(remainingAmount / goal.getMonthlyContribution());
+                        LocalDate estimatedCompletionDate = goal.getStartDate() != null ? goal.getStartDate().plusMonths((long)monthsToTarget) : LocalDate.now().plusMonths((long)monthsToTarget);
+                        detailsPanel.add(new JLabel("Est. Completion: " + estimatedCompletionDate.format(DateTimeFormatter.ISO_LOCAL_DATE) + " (~" + (int)monthsToTarget + " months)"));
+                    }
+                }
+
+                goalPanel.add(detailsPanel, BorderLayout.CENTER);
+
+                JProgressBar progressBar = new JProgressBar(0, 100);
+                int progress = 0;
+                if (goal.getTargetAmount() > 0) {
+                    progress = (int) ((goal.getCurrentAmount() / goal.getTargetAmount()) * 100);
+                }
+                progressBar.setValue(Math.min(progress, 100)); // Cap at 100%
+                progressBar.setStringPainted(true);
+                goalPanel.add(progressBar, BorderLayout.SOUTH);
+                
+                goalsDisplayArea.add(goalPanel);
+                goalsDisplayArea.add(Box.createRigidArea(new Dimension(0, 10))); // Spacing
+            }
+        }
+        goalsDisplayArea.revalidate();
+        goalsDisplayArea.repaint();
     }
     
     /**
@@ -929,9 +1059,28 @@ public class AnalysisPanel extends JPanel {
         // 添加"所有类别"选项
         categoryComboBox.addItem("All Categories");
         
-        // 重新添加所有类别
-        for (String category : mainFrame.getSettings().getDefaultCategories()) {
-            categoryComboBox.addItem(category);
+        // 重新添加所有类别 (expense and income)
+        if (mainFrame != null && mainFrame.getSettings() != null) {
+            Settings settings = mainFrame.getSettings();
+            if (settings.getExpenseCategories() != null) {
+                for (String category : settings.getExpenseCategories()) {
+                    categoryComboBox.addItem(category);
+                }
+            }
+            if (settings.getIncomeCategories() != null) {
+                for (String category : settings.getIncomeCategories()) {
+                    boolean exists = false;
+                    for (int i = 0; i < categoryComboBox.getItemCount(); i++) {
+                        if (category.equals(categoryComboBox.getItemAt(i))) {
+                            exists = true;
+                            break;
+                        }
+                    }
+                    if (!exists) {
+                        categoryComboBox.addItem(category);
+                    }
+                }
+            }
         }
         
         // 如果可能，恢复之前选中的类别

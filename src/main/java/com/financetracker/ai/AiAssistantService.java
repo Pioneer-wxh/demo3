@@ -9,7 +9,10 @@ import java.util.Map;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+import com.financetracker.model.Settings;
 import com.financetracker.model.Transaction;
+import com.financetracker.service.BudgetAdjustmentService;
+import com.financetracker.service.SettingsService;
 import com.financetracker.service.TransactionService;
 
 /**
@@ -18,9 +21,13 @@ import com.financetracker.service.TransactionService;
 public class AiAssistantService {
     
     private final DeepSeekAiService aiService;
+    private final SettingsService settingsService;
+    private final BudgetAdjustmentService budgetAdjustmentService;
     
-    public AiAssistantService() {
+    public AiAssistantService(SettingsService settingsService) {
         this.aiService = new DeepSeekAiService();
+        this.settingsService = settingsService;
+        this.budgetAdjustmentService = new BudgetAdjustmentService(settingsService);
     }
     
     /**
@@ -184,42 +191,83 @@ public class AiAssistantService {
         // List<Transaction> allTransactions = CsvDataReader.readAllTransactions();
         
         // 默认分类和类型
-        String category = "其他";
-        boolean isExpense = amount > 0;
+        String category = "Others";
+        boolean isExpense = amount >= 0;
         
         // 简单的关键词匹配分析
         String lowerDesc = description.toLowerCase();
         
-        // 收入判断
-        if (lowerDesc.contains("工资") || lowerDesc.contains("薪水") || lowerDesc.contains("salary")) {
-            category = "工资";
+        // 优先判断是否为收入 (通常收入类别更明确)
+        if (lowerDesc.contains("工资") || lowerDesc.contains("薪水") || lowerDesc.contains("salary") || lowerDesc.contains("payroll")) {
+            category = "Salary";
             isExpense = false;
-        } else if (lowerDesc.contains("奖金") || lowerDesc.contains("bonus")) {
-            category = "奖金";
+        } else if (lowerDesc.contains("奖金") || lowerDesc.contains("bonus") || lowerDesc.contains("award")) {
+            category = "Bonus";
             isExpense = false;
-        } else if (lowerDesc.contains("投资") || lowerDesc.contains("股票") || lowerDesc.contains("基金")) {
-            category = "投资收益";
+        } else if (lowerDesc.contains("投资") || lowerDesc.contains("股票") || lowerDesc.contains("基金") || 
+                   lowerDesc.contains("invest") || lowerDesc.contains("stock") || lowerDesc.contains("fund") || lowerDesc.contains("financial")) {
+            category = "Investment";
             isExpense = false;
-        } else if (lowerDesc.contains("退款") || lowerDesc.contains("报销")) {
-            category = "退款";
+        } else if (lowerDesc.contains("退款") || lowerDesc.contains("报销") || lowerDesc.contains("refund") || lowerDesc.contains("reimbursement")) {
+            category = "Refund";
             isExpense = false;
-        }
-        // 支出判断
-        else if (lowerDesc.contains("餐") || lowerDesc.contains("饭") || lowerDesc.contains("食品") || lowerDesc.contains("超市")) {
-            category = "餐饮";
+        } else if (lowerDesc.contains("利息") || lowerDesc.contains("interest")) {
+            category = "Interest";
+            isExpense = false;
+        } else if (lowerDesc.contains("礼物") || lowerDesc.contains("礼金") || lowerDesc.contains("gift")) {
+            category = "Gift";
+            isExpense = false;
+        } else if (lowerDesc.contains("兼职") || lowerDesc.contains("副业") || lowerDesc.contains("freelance")) {
+            category = "Freelance/Part-time";
+            isExpense = false;
+        } 
+        // 如果不是明确的收入，再判断支出类别
+        // (如果上面已经判断为 isExpense = false, 则这里的判断不会覆盖)
+        else if (lowerDesc.contains("餐") || lowerDesc.contains("饭") || lowerDesc.contains("食品") || lowerDesc.contains("超市") ||
+            lowerDesc.contains("food") || lowerDesc.contains("eat") || lowerDesc.contains("meal") || lowerDesc.contains("dining") ||
+            lowerDesc.contains("restaurant") || lowerDesc.contains("grocery")) {
+            category = "Food";
             isExpense = true;
-        } else if (lowerDesc.contains("交通") || lowerDesc.contains("车") || lowerDesc.contains("公交") || lowerDesc.contains("地铁")) {
-            category = "交通";
+        } else if (lowerDesc.contains("交通") || lowerDesc.contains("车") || lowerDesc.contains("公交") || lowerDesc.contains("地铁") ||
+                   lowerDesc.contains("traffic") || lowerDesc.contains("bus") || lowerDesc.contains("subway") || lowerDesc.contains("taxi") || 
+                   lowerDesc.contains("gas") || lowerDesc.contains("fuel") || lowerDesc.contains("parking")) {
+            category = "Transportation";
             isExpense = true;
-        } else if (lowerDesc.contains("房租") || lowerDesc.contains("水电") || lowerDesc.contains("物业")) {
-            category = "住房";
+        } else if (lowerDesc.contains("房租") || lowerDesc.contains("水电") || lowerDesc.contains("物业") || lowerDesc.contains("住房") ||
+                   lowerDesc.contains("rent") || lowerDesc.contains("housing") || lowerDesc.contains("utility") || lowerDesc.contains("mortgage")) {
+            category = "Housing"; // May include some utilities, or separate Utilities later if needed
             isExpense = true;
-        } else if (lowerDesc.contains("衣") || lowerDesc.contains("服装") || lowerDesc.contains("鞋")) {
-            category = "服装";
+        } else if (lowerDesc.contains("衣") || lowerDesc.contains("服装") || lowerDesc.contains("鞋") ||
+                   lowerDesc.contains("clothing") || lowerDesc.contains("apparel") || lowerDesc.contains("shoe")) {
+            category = "Clothing";
             isExpense = true;
-        } else if (lowerDesc.contains("娱乐") || lowerDesc.contains("电影") || lowerDesc.contains("游戏")) {
-            category = "娱乐";
+        } else if (lowerDesc.contains("娱乐") || lowerDesc.contains("电影") || lowerDesc.contains("游戏") ||
+                   lowerDesc.contains("entertainment") || lowerDesc.contains("movie") || lowerDesc.contains("game") || lowerDesc.contains("hobby")) {
+            category = "Entertainment";
             isExpense = true;
+        } else if (lowerDesc.contains("购物") || lowerDesc.contains("买") ||
+                 lowerDesc.contains("shop") || lowerDesc.contains("buy") || lowerDesc.contains("purchase") || lowerDesc.contains("store")) {
+            category = "Shopping";
+            isExpense = true;
+        } else if (lowerDesc.contains("医疗") || lowerDesc.contains("药") || lowerDesc.contains("医院") ||
+                   lowerDesc.contains("medical") || lowerDesc.contains("health") || lowerDesc.contains("doctor")) {
+            category = "Healthcare";
+            isExpense = true;
+        } else if (lowerDesc.contains("教育") || lowerDesc.contains("学费") || lowerDesc.contains("课程") ||
+                   lowerDesc.contains("education") || lowerDesc.contains("school") || lowerDesc.contains("course")) {
+            category = "Education";
+            isExpense = true;
+        } else {
+            // If no specific income or expense category matched, and isExpense wasn't set to false by an income match,
+            // assume it's an expense and categorize as "Others".
+            // If amount was used for initial isExpense detection, this might need adjustment.
+            // For now, if not an income, it's an expense.
+            if (isExpense) { // If not already set to false (income)
+                 category = "Others";
+            } else {
+                // It was flagged as income by some other means but didn't match a specific income category
+                category = "Other Income";
+            }
         }
         
         result.put("category", category);
@@ -365,6 +413,23 @@ public class AiAssistantService {
      * @return 分析报告文本
      */
     public String generateCurrentMonthAnalysis(TransactionService transactionService) {
+        // Process monthly savings for the current month first
+        Settings settings = settingsService.getSettings();
+        if (settings != null) {
+            YearMonth currentMonthToProcess = YearMonth.now();
+            int savingsTransactionDay = settings.getBudgetStartDay() > 0 ? settings.getBudgetStartDay() : 1; // Default to 1 if not set
+            // It's important that TransactionService is capable of being called multiple times for the same month
+            // without creating duplicate transactions, or we need a flag here.
+            // For now, we assume it handles this or it's acceptable for it to run once per session/major action.
+            boolean savingsProcessed = transactionService.processMonthlySavingsContributions(settingsService, currentMonthToProcess, savingsTransactionDay, "Savings");
+            if (!savingsProcessed) {
+                // Log or handle the error, though the method itself logs errors.
+                System.err.println("AiAssistantService: Processing monthly savings contributions might have failed for " + currentMonthToProcess);
+            }
+        } else {
+            System.err.println("AiAssistantService: Settings are null, cannot process monthly savings.");
+        }
+
         List<Transaction> currentMonthTransactions = transactionService.getTransactionsForCurrentMonth();
         
         // 准备数据
@@ -437,49 +502,102 @@ public class AiAssistantService {
      * @return 预算建议文本
      */
     public String generateNextMonthBudget(TransactionService transactionService) {
-        List<Transaction> allTransactions = transactionService.getAllTransactions();
+        // Process monthly savings for the current month first, to ensure its impact is considered if relevant for next month's planning context
+        Settings settings = settingsService.getSettings(); // Re-fetch settings, though it should be the same instance as above if called in same session
+        if (settings != null) {
+            YearMonth currentMonthToProcess = YearMonth.now(); // Process for current month
+            int savingsTransactionDay = settings.getBudgetStartDay() > 0 ? settings.getBudgetStartDay() : 1; // Default to 1 if not set
+            boolean savingsProcessed = transactionService.processMonthlySavingsContributions(settingsService, currentMonthToProcess, savingsTransactionDay, "Savings");
+            if (!savingsProcessed) {
+                System.err.println("AiAssistantService: Processing monthly savings contributions might have failed for " + currentMonthToProcess + " before generating next month budget.");
+            }
+        }
+         else {
+            System.err.println("AiAssistantService: Settings are null, cannot process monthly savings for next month budget context.");
+        }
+
         List<Transaction> currentMonthTransactions = transactionService.getTransactionsForCurrentMonth();
-        
+        // Settings settings = settingsService.getSettings(); // Already fetched above
+
         // 准备数据
         StringBuilder data = new StringBuilder();
         YearMonth currentMonth = YearMonth.now();
         YearMonth nextMonth = currentMonth.plusMonths(1);
         
-        double totalIncome = transactionService.getTotalIncome(currentMonthTransactions);
-        double totalExpense = transactionService.getTotalExpense(currentMonthTransactions);
+        double totalIncomeCurrentMonth = transactionService.getTotalIncome(currentMonthTransactions);
+        double totalExpenseCurrentMonth = transactionService.getTotalExpense(currentMonthTransactions);
         
         data.append(String.format("当前月份：%s\n", currentMonth.format(DateTimeFormatter.ofPattern("yyyy年MM月"))));
         data.append(String.format("下个月：%s\n", nextMonth.format(DateTimeFormatter.ofPattern("yyyy年MM月"))));
-        data.append(String.format("总收入：%.2f\n", totalIncome));
-        data.append(String.format("总支出：%.2f\n", totalExpense));
-        data.append(String.format("结余：%.2f\n\n", totalIncome - totalExpense));
         
-        // 按类别统计支出
-        Map<String, Double> categoryExpenses = new HashMap<>();
+        if (settings != null) {
+            data.append(String.format("月度总预算基准 (来自设置): %.2f %s\n", settings.getMonthlyBudget(), settings.getDefaultCurrency()));
+        } else {
+            data.append("月度总预算基准: 未设置\n");
+        }
+
+        data.append(String.format("本月总收入：%.2f\n", totalIncomeCurrentMonth));
+        data.append(String.format("本月总支出：%.2f\n", totalExpenseCurrentMonth));
+        data.append(String.format("本月结余：%.2f\n\n", totalIncomeCurrentMonth - totalExpenseCurrentMonth));
+        
+        // 按类别统计支出 (基于当前月数据作为预测基础)
+        Map<String, Double> categoryExpensesPrediction = new HashMap<>();
+        // A more sophisticated prediction might use average of past N months, or trend analysis.
+        // For now, using current month's expenses as a simple base.
         for (Transaction transaction : currentMonthTransactions) {
             if (transaction.isExpense()) {
                 String category = transaction.getCategory();
                 double amount = transaction.getAmount();
-                categoryExpenses.put(category, categoryExpenses.getOrDefault(category, 0.0) + amount);
+                categoryExpensesPrediction.put(category, categoryExpensesPrediction.getOrDefault(category, 0.0) + amount);
             }
         }
         
-        // 按支出金额排序类别
-        List<Map.Entry<String, Double>> sortedExpenses = categoryExpenses.entrySet().stream()
-                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
-                .collect(Collectors.toList());
-        
-        if (!sortedExpenses.isEmpty()) {
-            data.append("本月支出类别统计：\n");
-            for (Map.Entry<String, Double> entry : sortedExpenses) {
-                data.append(String.format("- %s: %.2f (%.1f%%)\n", 
-                        entry.getKey(), entry.getValue(), entry.getValue() / totalExpense * 100));
+        // 获取并应用特殊日期的预算调整
+        Map<String, Double> specialDateAdjustments = budgetAdjustmentService.getCategoryAdjustmentsForMonth(nextMonth);
+        if (!specialDateAdjustments.isEmpty()) {
+            data.append(String.format("下个月 (%s) 特殊日期预算调整：\n", nextMonth.format(DateTimeFormatter.ofPattern("yyyy年MM月"))));
+            for (Map.Entry<String, Double> adjustmentEntry : specialDateAdjustments.entrySet()) {
+                String category = adjustmentEntry.getKey();
+                double adjustmentAmount = adjustmentEntry.getValue();
+                categoryExpensesPrediction.merge(category, adjustmentAmount, Double::sum); // Add adjustment to predicted expense
+                data.append(String.format("- %s: 预计增加 %.2f %s\n", category, adjustmentAmount, settings != null ? settings.getDefaultCurrency() : ""));
             }
             data.append("\n");
         }
         
+        // 按预测支出金额排序类别
+        // List<Map.Entry<String, Double>> sortedExpenses = categoryExpenses.entrySet().stream() // Old: was current month's actual
+        List<Map.Entry<String, Double>> sortedPredictedExpenses = categoryExpensesPrediction.entrySet().stream()
+                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .collect(Collectors.toList());
+        
+        if (!sortedPredictedExpenses.isEmpty()) {
+            data.append(String.format("下个月 (%s) 预测支出类别统计 (基于本月及特殊日期调整)：\n", nextMonth.format(DateTimeFormatter.ofPattern("yyyy年MM月"))));
+            double predictedTotalExpense = sortedPredictedExpenses.stream().mapToDouble(Map.Entry::getValue).sum();
+            for (Map.Entry<String, Double> entry : sortedPredictedExpenses) {
+                data.append(String.format("- %s: %.2f %s (占预测总支出 %.1f%%)\n", 
+                        entry.getKey(), 
+                        entry.getValue(), 
+                        settings != null ? settings.getDefaultCurrency() : "",
+                        predictedTotalExpense > 0 ? (entry.getValue() / predictedTotalExpense * 100) : 0.0));
+            }
+             data.append(String.format("预测总支出: %.2f %s\n", predictedTotalExpense, settings != null ? settings.getDefaultCurrency() : ""));
+            data.append("\n");
+        } else if (specialDateAdjustments.isEmpty()) { // only if no other predictions were made
+             data.append("下个月预测支出类别统计：暂无足够数据或无特殊日期调整。\n\n");
+        }
+        
         // 使用AI服务生成下月预算建议
-        return aiService.generateBudgetSuggestions(data.toString());
+        // The prompt for the AI should clearly state that these are PREDICTIONS and ADJUSTMENTS
+        // and ask for advice based on this, perhaps comparing to the set monthlyBudget.
+        String promptPrefix = String.format(
+            "你是一位财务顾问。请根据以下为 %s 做的财务预测和预算调整信息，生成一份预算建议报告。\n" +
+            "报告应包括对各项预测支出的评估，与设定的月度总预算基准 (%.2f %s) 的对比分析 (如果已设置), 以及如何优化预算的建议。\n\n",
+            nextMonth.format(DateTimeFormatter.ofPattern("yyyy年MM月")),
+            settings != null ? settings.getMonthlyBudget() : 0.0,
+            settings != null ? settings.getDefaultCurrency() : "N/A"
+        );
+        return aiService.generateBudgetSuggestions(promptPrefix + data.toString());
     }
     
     /**
@@ -489,6 +607,19 @@ public class AiAssistantService {
      * @param messageConsumer 消息处理回调
      */
     public void generateCurrentMonthAnalysisStream(TransactionService transactionService, Consumer<String> messageConsumer) {
+        // Process monthly savings for the current month first
+        Settings settings = settingsService.getSettings();
+        if (settings != null) {
+            YearMonth currentMonthToProcess = YearMonth.now();
+            int savingsTransactionDay = settings.getBudgetStartDay() > 0 ? settings.getBudgetStartDay() : 1;
+            boolean savingsProcessed = transactionService.processMonthlySavingsContributions(settingsService, currentMonthToProcess, savingsTransactionDay, "Savings");
+            if (!savingsProcessed) {
+                 messageConsumer.accept("[警告] 处理当月储蓄目标时可能发生错误。分析可能未包含最新储蓄交易。\n");
+            }
+        } else {
+            messageConsumer.accept("[警告] 设置信息为空，无法处理当月储蓄目标。\n");
+        }
+
         List<Transaction> currentMonthTransactions = transactionService.getTransactionsForCurrentMonth();
         
         // 准备数据（与非流式方法相同）
@@ -576,3 +707,4 @@ public class AiAssistantService {
         }
     }
 }
+

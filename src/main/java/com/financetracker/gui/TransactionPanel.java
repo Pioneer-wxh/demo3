@@ -11,6 +11,7 @@ import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 import javax.swing.table.DefaultTableModel;
 import java.awt.*;
+import java.awt.event.ActionListener;
 import java.io.File;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -65,96 +66,65 @@ public class TransactionPanel extends JPanel {
         headerPanel.setLayout(new BorderLayout());
         headerPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         
-        // Add title label to header
         JLabel titleLabel = new JLabel("Transaction Record Management");
         titleLabel.setFont(new Font("Arial", Font.BOLD, 18));
         headerPanel.add(titleLabel, BorderLayout.WEST);
         
-        // Add home button to header
         JButton homeButton = new JButton("HOME");
         homeButton.addActionListener(e -> mainFrame.showPanel("home"));
         headerPanel.add(homeButton, BorderLayout.EAST);
         
-        // Add header to panel
         add(headerPanel, BorderLayout.NORTH);
-        
-        // Create main content panel
-        JPanel contentPanel = new JPanel();
-        contentPanel.setLayout(new BorderLayout());
-        contentPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        
-        // Create table panel
+
+        // --- Define tablePanel and formPanel BEFORE use in JSplitPane ---
+
+        // Create table panel (Side A content)
         JPanel tablePanel = new JPanel();
         tablePanel.setLayout(new BorderLayout());
         tablePanel.setBorder(BorderFactory.createTitledBorder("Transactions"));
         
-        // Create table model with columns
         String[] columns = {"Date", "Amount", "Description", "Category", "Participant", "Type"};
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                return false; // Make table read-only
+                return false; 
             }
         };
-        
-        // Create table
         transactionTable = new JTable(tableModel);
         transactionTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
-        
-        // Add table to scroll pane
         JScrollPane scrollPane = new JScrollPane(transactionTable);
         tablePanel.add(scrollPane, BorderLayout.CENTER);
         
-        // Create table button panel
         JPanel tableButtonPanel = new JPanel();
         tableButtonPanel.setLayout(new FlowLayout(FlowLayout.RIGHT));
-        
-        // Add buttons to table button panel
         JButton deleteButton = new JButton("删除选中项");
         deleteButton.addActionListener(e -> deleteSelectedTransactions());
-        
         JButton editButton = new JButton("编辑");
         editButton.addActionListener(e -> editSelectedTransaction());
-        
         JButton importButton = new JButton("导入CSV");
         importButton.addActionListener(e -> importCsv());
-        
         JButton exportButton = new JButton("导出CSV");
         exportButton.addActionListener(e -> exportCsv());
-        
         tableButtonPanel.add(importButton);
         tableButtonPanel.add(exportButton);
         tableButtonPanel.add(editButton);
         tableButtonPanel.add(deleteButton);
-        
-        // Add table button panel to table panel
         tablePanel.add(tableButtonPanel, BorderLayout.SOUTH);
-        
-        // Add table panel to content panel
-        contentPanel.add(tablePanel, BorderLayout.CENTER);
-        
-        // Create form panel
+
+        // Create form panel (Side B content)
         JPanel formPanel = new JPanel();
         formPanel.setLayout(new BorderLayout());
         formPanel.setBorder(BorderFactory.createTitledBorder("Add Transaction"));
         
-        // Create form fields panel
         JPanel fieldsPanel = new JPanel();
         fieldsPanel.setLayout(new GridBagLayout());
-        
-        // Create grid bag constraints
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.insets = new Insets(5, 5, 5, 5);
         
-        // Add date field
-        gbc.gridx = 0;
-        gbc.gridy = 0;
-        fieldsPanel.add(new JLabel("Date:"), gbc);
-        
-        gbc.gridx = 1;
-        gbc.gridy = 0;
-        // 创建日期选择器替代文本框
+        // Date field
+        gbc.gridx = 0; gbc.gridy = 0; fieldsPanel.add(new JLabel("Date:"), gbc);
+        gbc.gridx = 1; gbc.gridy = 0;
         Date now = new Date();
         SpinnerDateModel dateModel = new SpinnerDateModel(now, null, null, Calendar.DAY_OF_MONTH);
         dateSpinner = new JSpinner(dateModel);
@@ -162,112 +132,85 @@ public class TransactionPanel extends JPanel {
         dateSpinner.setEditor(dateEditor);
         fieldsPanel.add(dateSpinner, gbc);
         
-        // Add amount field
-        gbc.gridx = 0;
-        gbc.gridy = 1;
-        fieldsPanel.add(new JLabel("Amount:"), gbc);
-        
-        gbc.gridx = 1;
-        gbc.gridy = 1;
+        // Amount field
+        gbc.gridx = 0; gbc.gridy = 1; fieldsPanel.add(new JLabel("Amount:"), gbc);
+        gbc.gridx = 1; gbc.gridy = 1;
         amountField = new JTextField(10);
         fieldsPanel.add(amountField, gbc);
         
-        // Add description field
-        gbc.gridx = 0;
-        gbc.gridy = 2;
-        fieldsPanel.add(new JLabel("Description:"), gbc);
-        
-        gbc.gridx = 1;
-        gbc.gridy = 2;
+        // Description field
+        gbc.gridx = 0; gbc.gridy = 2; fieldsPanel.add(new JLabel("Description:"), gbc);
+        gbc.gridx = 1; gbc.gridy = 2;
         descriptionField = new JTextField(20);
         fieldsPanel.add(descriptionField, gbc);
         
-        // Add category field
-        gbc.gridx = 0;
-        gbc.gridy = 3;
-        fieldsPanel.add(new JLabel("Category:"), gbc);
-        
-        gbc.gridx = 1;
-        gbc.gridy = 3;
+        // Category field
+        gbc.gridx = 0; gbc.gridy = 3; fieldsPanel.add(new JLabel("Category:"), gbc);
+        gbc.gridx = 1; gbc.gridy = 3;
         categoryComboBox = new JComboBox<>();
-        for (String category : mainFrame.getSettings().getDefaultCategories()) {
-            categoryComboBox.addItem(category);
-        }
+        updateCategoryDropdown(); 
         fieldsPanel.add(categoryComboBox, gbc);
         
-        // Add participant field
-        gbc.gridx = 0;
-        gbc.gridy = 4;
-        fieldsPanel.add(new JLabel("Participant:"), gbc);
-        
-        gbc.gridx = 1;
-        gbc.gridy = 4;
+        // Participant field
+        gbc.gridx = 0; gbc.gridy = 4; fieldsPanel.add(new JLabel("Participant:"), gbc);
+        gbc.gridx = 1; gbc.gridy = 4;
         participantField = new JTextField(20);
         fieldsPanel.add(participantField, gbc);
         
-        // Add notes field
-        gbc.gridx = 0;
-        gbc.gridy = 5;
-        fieldsPanel.add(new JLabel("Notes:"), gbc);
-        
-        gbc.gridx = 1;
-        gbc.gridy = 5;
+        // Notes field
+        gbc.gridx = 0; gbc.gridy = 5; fieldsPanel.add(new JLabel("Notes:"), gbc);
+        gbc.gridx = 1; gbc.gridy = 5;
         notesField = new JTextField(20);
         fieldsPanel.add(notesField, gbc);
         
-        // Add transaction type radio buttons
-        gbc.gridx = 0;
-        gbc.gridy = 6;
-        fieldsPanel.add(new JLabel("Type:"), gbc);
-        
-        gbc.gridx = 1;
-        gbc.gridy = 6;
-        JPanel radioPanel = new JPanel();
-        radioPanel.setLayout(new FlowLayout(FlowLayout.LEFT));
-        
+        // Type radio buttons
+        gbc.gridx = 0; gbc.gridy = 6; fieldsPanel.add(new JLabel("Type:"), gbc);
+        gbc.gridx = 1; gbc.gridy = 6;
+        JPanel radioPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         expenseRadio = new JRadioButton("Expense");
         incomeRadio = new JRadioButton("Income");
         expenseRadio.setSelected(true);
-        
         ButtonGroup group = new ButtonGroup();
         group.add(expenseRadio);
         group.add(incomeRadio);
-        
+        ActionListener categoryUpdateListener = e -> updateCategoryDropdown();
+        expenseRadio.addActionListener(categoryUpdateListener);
+        incomeRadio.addActionListener(categoryUpdateListener);
         radioPanel.add(expenseRadio);
         radioPanel.add(incomeRadio);
         fieldsPanel.add(radioPanel, gbc);
         
-        // Add fields panel to form panel
         formPanel.add(fieldsPanel, BorderLayout.CENTER);
         
-        // Create form button panel
-        JPanel formButtonPanel = new JPanel();
-        formButtonPanel.setLayout(new FlowLayout(FlowLayout.RIGHT));
-        
-        // Add buttons to form button panel
+        JPanel formButtonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton clearButton = new JButton("Clear");
         clearButton.addActionListener(e -> clearForm());
-        
         JButton addButton = new JButton("Add");
         addButton.addActionListener(e -> addTransaction());
-        
         formButtonPanel.add(clearButton);
         formButtonPanel.add(addButton);
-        
-        // Add form button panel to form panel
         formPanel.add(formButtonPanel, BorderLayout.SOUTH);
-        
-        // Add form panel to content panel
-        contentPanel.add(formPanel, BorderLayout.SOUTH);
-        
-        // Add content panel to main panel
-        add(contentPanel, BorderLayout.CENTER);
+
+        // Create main content panel using JSplitPane for side-by-side layout
+        JSplitPane mainSplitPane = new JSplitPane(JSplitPane.HORIZONTAL_SPLIT);
+        mainSplitPane.setResizeWeight(0.6); // Give more space to the table initially
+
+        // --- Side A: Transaction Table and Actions ---
+        //JPanel sideAPanel = new JPanel(new BorderLayout()); // Not strictly needed, tablePanel can be directly used
+        //sideAPanel.add(tablePanel, BorderLayout.CENTER);
+        mainSplitPane.setLeftComponent(tablePanel); // Use tablePanel directly
+
+        // --- Side B: Add Transaction Form ---
+        mainSplitPane.setRightComponent(formPanel);
+
+        // Add the split pane to the main panel
+        add(mainSplitPane, BorderLayout.CENTER);
     }
     
     /**
      * Loads transactions from the data file and displays them in the table.
      */
-    private void loadTransactions() {
+    public void loadTransactions() {
         // Clear the table
         tableModel.setRowCount(0);
         
@@ -830,25 +773,48 @@ public class TransactionPanel extends JPanel {
     }
 
     /**
+     * Updates the category dropdown based on the selected transaction type (Expense/Income).
+     */
+    public void updateCategoryDropdown() {
+        if (categoryComboBox == null || mainFrame == null || mainFrame.getSettings() == null) {
+            return; // Or handle error appropriately
+        }
+
+        String selectedCategory = (String) categoryComboBox.getSelectedItem();
+        categoryComboBox.removeAllItems();
+
+        List<String> categories;
+        if (expenseRadio != null && expenseRadio.isSelected()) {
+            categories = mainFrame.getSettings().getExpenseCategories();
+        } else if (incomeRadio != null && incomeRadio.isSelected()) {
+            categories = mainFrame.getSettings().getIncomeCategories();
+        } else {
+            // Default to expense categories if no radio button is somehow selected, or handle error
+            categories = mainFrame.getSettings().getExpenseCategories();
+        }
+
+        if (categories != null) {
+            for (String category : categories) {
+                categoryComboBox.addItem(category);
+            }
+        }
+
+        // Try to reselect the previously selected category if it exists in the new list
+        if (selectedCategory != null) {
+            for (int i = 0; i < categoryComboBox.getItemCount(); i++) {
+                if (selectedCategory.equals(categoryComboBox.getItemAt(i))) {
+                    categoryComboBox.setSelectedIndex(i);
+                    break;
+                }
+            }
+        }
+    }
+    
+    /**
      * 刷新类别下拉列表
      */
     public void refreshCategoryList() {
-        // 保存当前选中的类别
-        String selectedCategory = (String) categoryComboBox.getSelectedItem();
-        
-        // 清空下拉列表
-        categoryComboBox.removeAllItems();
-        
-        // 重新添加所有类别
-        for (String category : mainFrame.getSettings().getDefaultCategories()) {
-            categoryComboBox.addItem(category);
-        }
-        
-        // 如果可能，恢复之前选中的类别
-        if (selectedCategory != null && mainFrame.getSettings().getDefaultCategories().contains(selectedCategory)) {
-            categoryComboBox.setSelectedItem(selectedCategory);
-        } else if (categoryComboBox.getItemCount() > 0) {
-            categoryComboBox.setSelectedIndex(0);
-        }
+        updateCategoryDropdown(); // Now calls the new method that respects transaction type
+        // No need to explicitly save/restore selected item here, updateCategoryDropdown handles it.
     }
 }

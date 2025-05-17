@@ -1,5 +1,6 @@
 package com.financetracker.service;
 
+import java.util.ArrayList;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -51,6 +52,14 @@ public class SettingsService {
             return saveSettings();
         } else {
             settings = loadedSettings;
+            // Ensure lists are not null after deserializing an older version
+            // or if the Settings object was somehow created without these lists initialized.
+            if (settings.getSpecialDates() == null) {
+                settings.setSpecialDates(new ArrayList<>());
+            }
+            if (settings.getSavingGoals() == null) {
+                settings.setSavingGoals(new ArrayList<>());
+            }
             return true;
         }
     }
@@ -61,33 +70,6 @@ public class SettingsService {
     public boolean resetToDefault() {
         settings = new Settings();
         return saveSettings();
-    }
-
-    /**
-     * 添加默认分类
-     */
-    public boolean addDefaultCategory(String category) {
-        if (category == null || category.trim().isEmpty()) {
-            return false;
-        }
-
-        settings.addDefaultCategory(category.trim());
-        return saveSettings();
-    }
-
-    /**
-     * 删除默认分类
-     */
-    public boolean removeDefaultCategory(String category) {
-        if (category == null || category.trim().isEmpty()) {
-            return false;
-        }
-
-        boolean removed = settings.removeDefaultCategory(category.trim());
-        if (removed) {
-            return saveSettings();
-        }
-        return false;
     }
 
     /**
