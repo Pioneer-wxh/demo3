@@ -1,7 +1,6 @@
 package com.financetracker.gui;
 
 import java.awt.BorderLayout;
-import java.awt.Dimension;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
@@ -19,11 +18,13 @@ import javax.swing.Box;
 import javax.swing.BoxLayout;
 import javax.swing.JButton;
 import javax.swing.JCheckBox;
+import javax.swing.JComboBox;
 import javax.swing.JLabel;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JScrollPane;
 import javax.swing.JSpinner;
+import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
 import javax.swing.ListSelectionModel;
@@ -53,12 +54,26 @@ public class SettingsPanel extends JPanel {
     private SpecialDateService specialDateService;
     private BudgetAdjustmentService budgetAdjustmentService;
     
+    // CardLayout and panel for switching views - REMOVED
+    // private CardLayout settingsCardLayout;
+    // private JPanel settingsContentPanel;
+
+    private JTabbedPane tabbedPane; // New JTabbedPane
+
+    // Panels for each settings section (many are already fields)
+    private JPanel specialDatesPanel;
+    private JPanel savingsGoalsPanel;
+    private JPanel categoryManagementPanel;
+    private JPanel monthStartDayPanel;
+    private JPanel monthEndClosingPanel;
+    private JPanel generalSettingsPanelHolder; // New panel to hold combined general settings
+
     private JTable specialDatesTable;
     private DefaultTableModel specialDatesTableModel;
     private JTextField specialDateNameField;
     private JSpinner specialDateSpinner;
     private JTextField specialDateDescriptionField;
-    private JTextField specialDateCategoriesField;
+    private JComboBox<String> specialDateCategoryComboBox;
     private JTextField specialDateImpactField;
     
     private JTextField savingsAmountField;
@@ -103,78 +118,68 @@ public class SettingsPanel extends JPanel {
      * Initializes the panel components.
      */
     private void initComponents() {
-        // Set layout
-        setLayout(new BorderLayout());
-        
-        // Create header panel
-        JPanel headerPanel = new JPanel();
-        headerPanel.setLayout(new BorderLayout());
+        setLayout(new BorderLayout(10, 10)); // Main layout for SettingsPanel
+
+        // --- Header Panel (Title and HOME button) ---
+        JPanel headerPanel = new JPanel(new BorderLayout());
         headerPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        
-        // Add title label to header
         JLabel titleLabel = new JLabel("Settings");
         titleLabel.setFont(new Font("Arial", Font.BOLD, 18));
         headerPanel.add(titleLabel, BorderLayout.WEST);
-        
-        // Add home button to header
         JButton homeButton = new JButton("HOME");
         homeButton.addActionListener(e -> mainFrame.showPanel("home"));
         headerPanel.add(homeButton, BorderLayout.EAST);
-        
-        // Add header to panel
         add(headerPanel, BorderLayout.NORTH);
+
+        // --- JTabbedPane for Settings Content ---
+        tabbedPane = new JTabbedPane();
+        tabbedPane.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
+
+        // Create individual settings panels
+        specialDatesPanel = createSpecialDatesPanel();
+        savingsGoalsPanel = createSavingsGoalsPanel();
         
-        // Create main content panel
-        JPanel contentPanel = new JPanel();
-        contentPanel.setLayout(new BoxLayout(contentPanel, BoxLayout.Y_AXIS));
-        contentPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+        // Create the holder panel for general settings
+        generalSettingsPanelHolder = new JPanel();
+        generalSettingsPanelHolder.setLayout(new BoxLayout(generalSettingsPanelHolder, BoxLayout.Y_AXIS));
+        generalSettingsPanelHolder.setBorder(BorderFactory.createEmptyBorder(10,10,10,10)); // Add some padding inside the scrollpane for this tab
         
-        // Create special dates panel
-        JPanel specialDatesPanel = createSpecialDatesPanel();
-        contentPanel.add(specialDatesPanel);
+        categoryManagementPanel = createCategoryManagementPanel();
+        monthStartDayPanel = createMonthStartDayPanel();
+        monthEndClosingPanel = createMonthEndClosingPanel();
         
-        // Add some vertical space
-        contentPanel.add(Box.createVerticalStrut(20));
+        generalSettingsPanelHolder.add(categoryManagementPanel);
+        generalSettingsPanelHolder.add(Box.createVerticalStrut(15));
+        generalSettingsPanelHolder.add(monthStartDayPanel);
+        generalSettingsPanelHolder.add(Box.createVerticalStrut(15));
+        generalSettingsPanelHolder.add(monthEndClosingPanel);
+        generalSettingsPanelHolder.add(Box.createVerticalGlue()); // Pushes content to top
+
+        // Add panels as tabs to JTabbedPane, wrapped in JScrollPanes
+        tabbedPane.addTab("Special Dates", new JScrollPane(specialDatesPanel));
+        tabbedPane.addTab("Saving Goals", new JScrollPane(savingsGoalsPanel));
+        tabbedPane.addTab("General Settings", new JScrollPane(generalSettingsPanelHolder));
         
-        // Create savings goals panel
-        JPanel savingsGoalsPanel = createSavingsGoalsPanel();
-        contentPanel.add(savingsGoalsPanel);
+        // --- Container for Navigation and Content - REMOVED / REPLACED by JTabbedPane ---
+        // JPanel centerAreaPanel = new JPanel(new BorderLayout(0, 5));
+        // centerAreaPanel.add(settingsNavigationPanel, BorderLayout.NORTH);
+        // centerAreaPanel.add(settingsContentPanel, BorderLayout.CENTER);
+
+        add(tabbedPane, BorderLayout.CENTER); // Add JTabbedPane to the center
         
-        // Add some vertical space
-        contentPanel.add(Box.createVerticalStrut(20));
-        
-        // Create category management panel
-        JPanel categoryManagementPanel = createCategoryManagementPanel();
-        contentPanel.add(categoryManagementPanel);
-        
-        // Add some vertical space
-        contentPanel.add(Box.createVerticalStrut(20));
-        
-        // Create month start day panel
-        JPanel monthStartDayPanel = createMonthStartDayPanel();
-        contentPanel.add(monthStartDayPanel);
-        
-        // Add content panel to scroll pane
-        JScrollPane scrollPane = new JScrollPane(contentPanel);
-        add(scrollPane, BorderLayout.CENTER);
-        
-        // Create button panel
-        JPanel buttonPanel = new JPanel();
-        buttonPanel.setLayout(new FlowLayout(FlowLayout.RIGHT));
-        buttonPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        
-        // Add buttons to button panel
+        // --- Bottom Button Panel (Reset, Save) ---
+        JPanel bottomButtonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        bottomButtonPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         JButton resetButton = new JButton("Reset to Default");
         resetButton.addActionListener(e -> resetToDefault());
-        
         JButton saveButton = new JButton("Save Changes");
         saveButton.addActionListener(e -> saveChanges());
-        
-        buttonPanel.add(resetButton);
-        buttonPanel.add(saveButton);
-        
-        // Add button panel to main panel
-        add(buttonPanel, BorderLayout.SOUTH);
+        bottomButtonPanel.add(resetButton);
+        bottomButtonPanel.add(saveButton);
+        add(bottomButtonPanel, BorderLayout.SOUTH);
+
+        // Show the first settings tab by default - JTabbedPane does this automatically
+        // settingsCardLayout.show(settingsContentPanel, "SpecialDates"); 
     }
     
     /**
@@ -184,8 +189,7 @@ public class SettingsPanel extends JPanel {
      */
     private JPanel createSpecialDatesPanel() {
         JPanel panel = new JPanel();
-        panel.setLayout(new BorderLayout());
-        panel.setBorder(BorderFactory.createTitledBorder("Special Dates Management"));
+        panel.setLayout(new BorderLayout(10,10));
         
         // Create table panel
         JPanel tablePanel = new JPanel();
@@ -211,6 +215,7 @@ public class SettingsPanel extends JPanel {
         
         // Add table to scroll pane
         JScrollPane scrollPane = new JScrollPane(specialDatesTable);
+        // scrollPane.setPreferredSize(new Dimension(400, 150)); // Example of removing fixed size
         tablePanel.add(scrollPane, BorderLayout.CENTER);
         
         // Add table panel to special dates panel
@@ -260,15 +265,16 @@ public class SettingsPanel extends JPanel {
         specialDateDescriptionField = new JTextField(20);
         formPanel.add(specialDateDescriptionField, gbc);
         
-        // Add affected categories field
+        // Add affected categories field (now a JComboBox)
         gbc.gridx = 0;
         gbc.gridy = 3;
-        formPanel.add(new JLabel("Affected Category:"), gbc);
+        formPanel.add(new JLabel("Affected Category (Expense):"), gbc);
         
         gbc.gridx = 1;
         gbc.gridy = 3;
-        specialDateCategoriesField = new JTextField(20);
-        formPanel.add(specialDateCategoriesField, gbc);
+        specialDateCategoryComboBox = new JComboBox<>();
+        updateSpecialDateCategoryComboBox(); // Populate the combo box
+        formPanel.add(specialDateCategoryComboBox, gbc);
         
         // Add expected impact field
         gbc.gridx = 0;
@@ -320,79 +326,112 @@ public class SettingsPanel extends JPanel {
      */
     private JPanel createSavingsGoalsPanel() {
         JPanel panel = new JPanel(new BorderLayout(10, 10));
-        panel.setBorder(BorderFactory.createTitledBorder("Saving Goals Management"));
-
+        
         // --- Table for displaying saving goals ---
         String[] goalColumns = {"Name", "Target Amount", "Current Amount", "Monthly Contribution", "Start Date", "Target Date", "Active"};
         savingGoalsTableModel = new DefaultTableModel(goalColumns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                return false; // Table is for display, editing via form
+                return false; // Table is for display only
             }
         };
         savingGoalsTable = new JTable(savingGoalsTableModel);
         savingGoalsTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        savingGoalsTable.addMouseListener(new java.awt.event.MouseAdapter() {
+            public void mouseClicked(java.awt.event.MouseEvent evt) {
+                if (evt.getClickCount() == 2) {
+                    int row = savingGoalsTable.rowAtPoint(evt.getPoint());
+                    if (row >= 0) {
+                        showSavingGoalDetails(row);
+                    }
+                }
+            }
+        });
         JScrollPane tableScrollPane = new JScrollPane(savingGoalsTable);
+        // tableScrollPane.setPreferredSize(new Dimension(400,150)); // Example of removing fixed size
         panel.add(tableScrollPane, BorderLayout.CENTER);
+
+        // --- Bottom Panel: Holds table actions and the form ---
+        JPanel bottomPanel = new JPanel(new BorderLayout(5, 5));
+
+        // --- Table Actions Panel (Edit, Delete) ---
+        JPanel tableActionsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JButton editSelectedGoalButton = new JButton("Edit Selected");
+        editSelectedGoalButton.addActionListener(e -> editSelectedSavingGoal());
+        JButton deleteSelectedGoalButton = new JButton("Delete Selected");
+        deleteSelectedGoalButton.addActionListener(e -> deleteSelectedSavingGoal());
+        tableActionsPanel.add(editSelectedGoalButton);
+        tableActionsPanel.add(deleteSelectedGoalButton);
+        bottomPanel.add(tableActionsPanel, BorderLayout.NORTH);
 
         // --- Form for adding/editing saving goals ---
         JPanel formOuterPanel = new JPanel(new BorderLayout(5,5));
-        formOuterPanel.setBorder(BorderFactory.createEmptyBorder(10,0,0,0)); // Add some top margin
+        formOuterPanel.setBorder(BorderFactory.createEmptyBorder(10,0,0,0));
         
         JPanel formFieldsPanel = new JPanel(new GridBagLayout());
-        GridBagConstraints gbc = new GridBagConstraints();
-        gbc.fill = GridBagConstraints.HORIZONTAL;
-        gbc.insets = new Insets(5, 5, 5, 5);
+        GridBagConstraints formFieldsGbc = new GridBagConstraints();
+        formFieldsGbc.fill = GridBagConstraints.HORIZONTAL;
+        formFieldsGbc.insets = new Insets(5, 5, 5, 5);
+        formFieldsGbc.weightx = 1.0; // Allow fields to use horizontal space
+        formFieldsGbc.gridx = 0; // Label column
+        formFieldsGbc.anchor = GridBagConstraints.WEST;
+        
+        GridBagConstraints fieldConstraints = new GridBagConstraints();
+        fieldConstraints.fill = GridBagConstraints.HORIZONTAL;
+        fieldConstraints.insets = new Insets(5, 5, 5, 5);
+        fieldConstraints.weightx = 1.0;
+        fieldConstraints.gridx = 1; // Field column
+
         int y = 0;
 
         // Name
-        gbc.gridx = 0; gbc.gridy = y; formFieldsPanel.add(new JLabel("Goal Name:"), gbc);
-        gbc.gridx = 1; gbc.gridy = y++; sgNameField = new JTextField(20); formFieldsPanel.add(sgNameField, gbc);
+        formFieldsGbc.gridy = y; formFieldsPanel.add(new JLabel("Goal Name:"), formFieldsGbc);
+        fieldConstraints.gridy = y++; sgNameField = new JTextField(); formFieldsPanel.add(sgNameField, fieldConstraints);
 
         // Description
-        gbc.gridx = 0; gbc.gridy = y; formFieldsPanel.add(new JLabel("Description (Optional):"), gbc);
-        gbc.gridx = 1; gbc.gridy = y++; sgDescriptionField = new JTextField(20); formFieldsPanel.add(sgDescriptionField, gbc);
+        formFieldsGbc.gridy = y; formFieldsPanel.add(new JLabel("Description (Optional):"), formFieldsGbc);
+        fieldConstraints.gridy = y++; sgDescriptionField = new JTextField(); formFieldsPanel.add(sgDescriptionField, fieldConstraints);
 
         // Target Amount
-        gbc.gridx = 0; gbc.gridy = y; formFieldsPanel.add(new JLabel("Target Amount:"), gbc);
+        formFieldsGbc.gridy = y; formFieldsPanel.add(new JLabel("Target Amount:"), formFieldsGbc);
         sgTargetAmountSpinner = new JSpinner(new SpinnerNumberModel(1000.0, 0.0, Double.MAX_VALUE, 100.0));
-        gbc.gridx = 1; gbc.gridy = y++; formFieldsPanel.add(sgTargetAmountSpinner, gbc);
+        fieldConstraints.gridy = y++; formFieldsPanel.add(sgTargetAmountSpinner, fieldConstraints);
 
         // Monthly Contribution
-        gbc.gridx = 0; gbc.gridy = y; formFieldsPanel.add(new JLabel("Monthly Contribution:"), gbc);
+        formFieldsGbc.gridy = y; formFieldsPanel.add(new JLabel("Monthly Contribution:"), formFieldsGbc);
         sgMonthlyContributionSpinner = new JSpinner(new SpinnerNumberModel(50.0, 0.0, Double.MAX_VALUE, 10.0));
-        gbc.gridx = 1; gbc.gridy = y++; formFieldsPanel.add(sgMonthlyContributionSpinner, gbc);
+        fieldConstraints.gridy = y++; formFieldsPanel.add(sgMonthlyContributionSpinner, fieldConstraints);
 
         // Start Date
-        gbc.gridx = 0; gbc.gridy = y; formFieldsPanel.add(new JLabel("Start Date:"), gbc);
+        formFieldsGbc.gridy = y; formFieldsPanel.add(new JLabel("Start Date:"), formFieldsGbc);
         sgStartDateSpinner = new JSpinner(new SpinnerDateModel(new Date(), null, null, Calendar.DAY_OF_MONTH));
         sgStartDateSpinner.setEditor(new JSpinner.DateEditor(sgStartDateSpinner, "yyyy-MM-dd"));
-        gbc.gridx = 1; gbc.gridy = y++; formFieldsPanel.add(sgStartDateSpinner, gbc);
+        fieldConstraints.gridy = y++; formFieldsPanel.add(sgStartDateSpinner, fieldConstraints);
 
         // Target Date (Optional)
-        gbc.gridx = 0; gbc.gridy = y; formFieldsPanel.add(new JLabel("Target Date (Optional):"), gbc);
-        // Allow null for target date by not setting a lower bound on date spinner if it was strict
-        // For now, standard date spinner, user can ignore or clear if logic allows null persistence
+        formFieldsGbc.gridy = y; formFieldsPanel.add(new JLabel("Target Date (Optional):"), formFieldsGbc);
         sgTargetDateSpinner = new JSpinner(new SpinnerDateModel(Date.from(LocalDate.now().plusYears(1).atStartOfDay(ZoneId.systemDefault()).toInstant()), null, null, Calendar.DAY_OF_MONTH));
         sgTargetDateSpinner.setEditor(new JSpinner.DateEditor(sgTargetDateSpinner, "yyyy-MM-dd"));
-        // To make it clear it's optional, perhaps add a checkbox to enable/disable it or clear button.
-        // For now, relying on user not setting a past date or a very far future if not intended.
-        gbc.gridx = 1; gbc.gridy = y++; formFieldsPanel.add(sgTargetDateSpinner, gbc);
-        // We can add a small button or checkbox later to truly nullify this if needed.
-        // For now, it will always have a date.
+        fieldConstraints.gridy = y++; formFieldsPanel.add(sgTargetDateSpinner, fieldConstraints);
 
         // Is Active
-        gbc.gridx = 0; gbc.gridy = y; formFieldsPanel.add(new JLabel("Active Goal:"), gbc);
+        formFieldsGbc.gridy = y; formFieldsPanel.add(new JLabel("Active Goal:"), formFieldsGbc);
         sgIsActiveCheckBox = new JCheckBox();
         sgIsActiveCheckBox.setSelected(true); // Default to active
-        gbc.gridx = 1; gbc.gridy = y++; formFieldsPanel.add(sgIsActiveCheckBox, gbc);
+        fieldConstraints.gridy = y++; formFieldsPanel.add(sgIsActiveCheckBox, fieldConstraints);
         
-        formOuterPanel.add(new JScrollPane(formFieldsPanel), BorderLayout.CENTER); // Make form scrollable if it gets too long
+        // Wrap formFieldsPanel in a JScrollPane for flexibility
+        JScrollPane formFieldsScrollPane = new JScrollPane(formFieldsPanel);
+        formFieldsScrollPane.setBorder(BorderFactory.createEmptyBorder()); 
+        // formFieldsScrollPane.setPreferredSize(new Dimension(400, 200)); // Example of removing fixed size
+        formOuterPanel.add(formFieldsScrollPane, BorderLayout.CENTER);
 
-        // --- Buttons for form actions ---
+        // Buttons for form actions (Add, Save, Clear)
         JPanel formButtonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         this.addGoalButton = new JButton("Add New Goal");
+        this.addGoalButton.addActionListener(e -> addSavingGoal()); // Ensure ActionListener is set
         this.saveGoalButton = new JButton("Save Edited Goal");
+        this.saveGoalButton.addActionListener(e -> saveEditedSavingGoal()); // Ensure ActionListener is set
         this.saveGoalButton.setEnabled(false);
         JButton clearFormButton = new JButton("Clear Form / Cancel Edit");
         clearFormButton.addActionListener(e -> clearSavingGoalForm());
@@ -401,43 +440,10 @@ public class SettingsPanel extends JPanel {
         formButtonPanel.add(saveGoalButton);
         formButtonPanel.add(clearFormButton);
         formOuterPanel.add(formButtonPanel, BorderLayout.SOUTH);
-
-        panel.add(formOuterPanel, BorderLayout.SOUTH);
-
-        // --- Buttons for table actions ---
-        JPanel tableActionsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
-        JButton editSelectedGoalButton = new JButton("Edit Selected");
-        editSelectedGoalButton.addActionListener(e -> editSelectedSavingGoal());
-        JButton deleteSelectedGoalButton = new JButton("Delete Selected");
-        deleteSelectedGoalButton.addActionListener(e -> deleteSelectedSavingGoal());
-        tableActionsPanel.add(editSelectedGoalButton);
-        tableActionsPanel.add(deleteSelectedGoalButton);
-        // Add this panel above or below the table, or combine with form buttons if layout prefers.
-        // Let's put it as a small bar between table and form.
-        panel.add(tableActionsPanel, BorderLayout.NORTH); // This places it above the table, which is not ideal.
-        // Let's reconsider: put table actions below the table, form below that.
-        // To do this, the main panel needs a different layout or nested panels.
         
-        // Revised structure: Main Panel (BorderLayout)
-        // CENTER: tableScrollPane
-        // SOUTH: new JPanel(BorderLayout) that contains:
-        //      CENTER: tableActionsPanel
-        //      SOUTH: formOuterPanel
+        bottomPanel.add(formOuterPanel, BorderLayout.CENTER);
+        panel.add(bottomPanel, BorderLayout.SOUTH);
 
-        // Let's adjust the main panel structure for better button placement
-        panel.remove(tableScrollPane);
-        panel.remove(formOuterPanel);
-        panel.remove(tableActionsPanel); // remove if it was added already
-
-        JPanel southOfTablePanel = new JPanel(new BorderLayout(5,5));
-        southOfTablePanel.add(tableActionsPanel, BorderLayout.NORTH);
-        southOfTablePanel.add(formOuterPanel, BorderLayout.CENTER);
-
-        panel.add(tableScrollPane, BorderLayout.CENTER);
-        panel.add(southOfTablePanel, BorderLayout.SOUTH);
-
-
-        // Initialize and load data
         loadSavingGoals(); 
         return panel;
     }
@@ -455,9 +461,9 @@ public class SettingsPanel extends JPanel {
         // Add rows to table
         for (SpecialDate specialDate : specialDates) {
             Settings settings = settingsService.getSettings();
-            double baseBudget = settings.getMonthlyBudget();
+            double baseBudget = (settings != null) ? settings.getMonthlyBudget() : 0.0; // Handle null settings
             double amountIncreaseValue = specialDate.getAmountIncrease();
-            double adjustedBudget = baseBudget + amountIncreaseValue;
+            double adjustedBudget = baseBudget + amountIncreaseValue; // This example might be too simplistic if category specific
             String budgetEffect = String.format("%.2f + %.2f = %.2f", baseBudget, amountIncreaseValue, adjustedBudget);
             
             Object[] row = {
@@ -485,7 +491,7 @@ public class SettingsPanel extends JPanel {
             LocalDate date = selectedDateValue.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
             
             String description = specialDateDescriptionField.getText().trim();
-            String affectedCategory = specialDateCategoriesField.getText().trim();
+            String affectedCategory = (String) specialDateCategoryComboBox.getSelectedItem();
             double amountIncrease = 0.0;
             try {
                 amountIncrease = Double.parseDouble(specialDateImpactField.getText().trim());
@@ -499,8 +505,8 @@ public class SettingsPanel extends JPanel {
                 JOptionPane.showMessageDialog(this, "Please enter a name for the special date.", "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
-            if (affectedCategory.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Please enter an affected category for the special date.", "Error", JOptionPane.ERROR_MESSAGE);
+            if (affectedCategory == null || affectedCategory.trim().isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Please select an affected category for the special date.", "Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
             
@@ -550,7 +556,7 @@ public class SettingsPanel extends JPanel {
         String name = (String) specialDatesTableModel.getValueAt(selectedRow, 0);
         LocalDate date = LocalDate.parse((String) specialDatesTableModel.getValueAt(selectedRow, 1));
         String description = (String) specialDatesTableModel.getValueAt(selectedRow, 2);
-        String affectedCategory = (String) specialDatesTableModel.getValueAt(selectedRow, 3);
+        String affectedCategoryFromTable = (String) specialDatesTableModel.getValueAt(selectedRow, 3);
         double amountIncrease;
         try {
             String amountStr = ((String) specialDatesTableModel.getValueAt(selectedRow, 4)).replaceAll("[^\\d.-]", "");
@@ -564,7 +570,7 @@ public class SettingsPanel extends JPanel {
         specialDateNameField.setText(name);
         specialDateSpinner.setValue(Date.from(date.atStartOfDay(ZoneId.systemDefault()).toInstant()));
         specialDateDescriptionField.setText(description);
-        specialDateCategoriesField.setText(affectedCategory);
+        specialDateCategoryComboBox.setSelectedItem(affectedCategoryFromTable);
         specialDateImpactField.setText(String.format("%.2f", amountIncrease));
         
         // For simplicity, editing means deleting the old one and adding a new one with current form data
@@ -619,7 +625,9 @@ public class SettingsPanel extends JPanel {
         specialDateNameField.setText("");
         specialDateSpinner.setValue(new Date());
         specialDateDescriptionField.setText("");
-        specialDateCategoriesField.setText("");
+        if (specialDateCategoryComboBox.getItemCount() > 0) {
+            specialDateCategoryComboBox.setSelectedIndex(0);
+        }
         specialDateImpactField.setText("");
     }
     
@@ -726,6 +734,7 @@ public class SettingsPanel extends JPanel {
         Settings settings = mainFrame.getSettings();
         populateCategoryPanel(expenseCategoriesDisplayPanel, settings.getExpenseCategories(), CategoryType.EXPENSE);
         populateCategoryPanel(incomeCategoriesDisplayPanel, settings.getIncomeCategories(), CategoryType.INCOME);
+        updateSpecialDateCategoryComboBox(); // Update the combo box when categories are refreshed
     }
 
     /**
@@ -1114,8 +1123,7 @@ public class SettingsPanel extends JPanel {
     private JPanel createCategoryManagementPanel() {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
-        panel.setBorder(BorderFactory.createTitledBorder("Category Management"));
-
+        
         // --- Expense Categories ---
         JPanel expensePanel = new JPanel(new BorderLayout(5, 5));
         expensePanel.setBorder(BorderFactory.createTitledBorder("Expense Categories"));
@@ -1123,7 +1131,7 @@ public class SettingsPanel extends JPanel {
         expenseCategoriesDisplayPanel = new JPanel();
         expenseCategoriesDisplayPanel.setLayout(new BoxLayout(expenseCategoriesDisplayPanel, BoxLayout.Y_AXIS));
         JScrollPane expenseScrollPane = new JScrollPane(expenseCategoriesDisplayPanel);
-        expenseScrollPane.setPreferredSize(new Dimension(300, 100)); // Set preferred size for scroll pane
+        // expenseScrollPane.setPreferredSize(new Dimension(300, 80)); // Example of removing/adjusting fixed size
 
         JPanel addExpensePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         newExpenseCategoryField = new JTextField(15);
@@ -1144,7 +1152,7 @@ public class SettingsPanel extends JPanel {
         incomeCategoriesDisplayPanel = new JPanel();
         incomeCategoriesDisplayPanel.setLayout(new BoxLayout(incomeCategoriesDisplayPanel, BoxLayout.Y_AXIS));
         JScrollPane incomeScrollPane = new JScrollPane(incomeCategoriesDisplayPanel);
-        incomeScrollPane.setPreferredSize(new Dimension(300, 100)); // Set preferred size for scroll pane
+        // incomeScrollPane.setPreferredSize(new Dimension(300, 80)); // Example of removing/adjusting fixed size
 
         JPanel addIncomePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         newIncomeCategoryField = new JTextField(15);
@@ -1165,8 +1173,7 @@ public class SettingsPanel extends JPanel {
 
     private JPanel createMonthStartDayPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
-        panel.setBorder(BorderFactory.createTitledBorder("Financial Month Start Day"));
-
+        
         panel.add(new JLabel("Select the day your financial month starts:"));
         // Allow days from 1 to 28.
         monthStartDaySpinner = new JSpinner(new SpinnerNumberModel(1, 1, 28, 1));
@@ -1182,5 +1189,133 @@ public class SettingsPanel extends JPanel {
         // If a dedicated save button for this setting is needed, it can be added here.
 
         return panel;
+    }
+
+    private JPanel createMonthEndClosingPanel() {
+        JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        
+        JButton performClosingButton = new JButton("Perform Month-End Closing");
+        performClosingButton.setToolTipText("Calculates surplus of previous financial month(s) and adds to Overall Account Balance.");
+        performClosingButton.addActionListener(e -> performMonthEndClosingAction());
+
+        panel.add(performClosingButton);
+        return panel;
+    }
+
+    private void performMonthEndClosingAction() {
+        if (mainFrame == null || mainFrame.getTransactionService() == null || mainFrame.getSettingsService() == null) {
+            JOptionPane.showMessageDialog(this, "Required services are not available.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        // Ask for confirmation
+        int confirmation = JOptionPane.showConfirmDialog(
+            this,
+            "This will close all unclosed financial months up to the last completed one.\n" +
+            "Surplus from these months will be added to your Overall Account Balance.\n\n" +
+            "Do you want to proceed?",
+            "Confirm Month-End Closing",
+            JOptionPane.YES_NO_OPTION,
+            JOptionPane.QUESTION_MESSAGE
+        );
+
+        if (confirmation != JOptionPane.YES_OPTION) {
+            return;
+        }
+
+        try {
+            boolean result = mainFrame.getTransactionService().performMonthEndClosing(mainFrame.getSettingsService());
+            if (result) {
+                // Refresh the overall balance display on HomePanel
+                if (mainFrame.getHomePanel() != null) {
+                    mainFrame.getHomePanel().updateOverallAccountBalance();
+                }
+                Settings currentSettings = mainFrame.getSettingsService().getSettings();
+                String lastClosed = currentSettings.getLastMonthClosed();
+                double newOverallBalance = currentSettings.getOverallAccountBalance();
+                JOptionPane.showMessageDialog(this, 
+                    "Month-end closing process completed successfully.\n" +
+                    "Last closed financial month: " + (lastClosed.isEmpty() ? "N/A" : lastClosed) + "\n" +
+                    String.format("New Overall Account Balance: %.2f %s", newOverallBalance, currentSettings.getDefaultCurrency()),
+                    "Month-End Closing Success", 
+                    JOptionPane.INFORMATION_MESSAGE);
+            } else {
+                JOptionPane.showMessageDialog(this, 
+                    "Month-end closing process completed, but no new months were closed.\n" +
+                    "This might be because all eligible months are already closed, or there was an issue.", 
+                    "Month-End Closing Info", 
+                    JOptionPane.INFORMATION_MESSAGE);
+            }
+        } catch (Exception ex) {
+            JOptionPane.showMessageDialog(this, "An error occurred during month-end closing: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            ex.printStackTrace();
+        }
+    }
+
+    // Method to update the JComboBox for Affected Category in Special Dates
+    private void updateSpecialDateCategoryComboBox() {
+        if (specialDateCategoryComboBox == null || settingsService == null || settingsService.getSettings() == null) {
+            return;
+        }
+        String previouslySelected = (String) specialDateCategoryComboBox.getSelectedItem();
+        specialDateCategoryComboBox.removeAllItems();
+        
+        List<String> expenseCategories = settingsService.getSettings().getExpenseCategories();
+        if (expenseCategories != null) {
+            for (String category : expenseCategories) {
+                specialDateCategoryComboBox.addItem(category);
+            }
+        }
+        // Optionally, add income categories too, or decide if special dates only affect expenses.
+        // For now, only expense categories are added based on the label "Affected Category (Expense):"
+
+        if (previouslySelected != null) {
+            specialDateCategoryComboBox.setSelectedItem(previouslySelected);
+        } else if (specialDateCategoryComboBox.getItemCount() > 0) {
+            specialDateCategoryComboBox.setSelectedIndex(0);
+        }
+    }
+
+    // Method to show details of a saving goal in a dialog
+    private void showSavingGoalDetails(int rowIndex) {
+        if (mainFrame == null || mainFrame.getSettings() == null || mainFrame.getSettings().getSavingGoals() == null) {
+            return;
+        }
+        List<SavingGoal> goals = mainFrame.getSettings().getSavingGoals();
+        if (rowIndex < 0 || rowIndex >= goals.size()) {
+            // Attempt to find by table data if list is somehow out of sync (less ideal)
+            // This part is tricky if table isn't perfectly mirroring the list order after sorts/filters (not an issue here currently)
+            System.err.println("Row index out of bounds for saving goal details.");
+            return;
+        }
+
+        // It's safer to get the goal by matching unique ID or name from the table if the underlying list order might change.
+        // For now, assuming the table row directly corresponds to the list index from loadSavingGoals.
+        // String goalNameFromTable = (String) savingGoalsTableModel.getValueAt(rowIndex, 0);
+        // SavingGoal goalToShow = goals.stream().filter(g -> g.getName().equals(goalNameFromTable)).findFirst().orElse(null);
+        // A more robust way if the list is not guaranteed to be in the same order as the table:
+        // Find the goal by ID from the table. First, ensure an ID column exists or fetch it.
+        // For simplicity, we'll rely on the current loading mechanism where table order matches list order after load.
+        SavingGoal goalToShow = goals.get(rowIndex); // This assumes the table is a direct reflection of the order in `goals` list.
+
+        if (goalToShow == null) {
+            JOptionPane.showMessageDialog(this, "Could not retrieve details for the selected saving goal.", "Error", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        StringBuilder details = new StringBuilder();
+        details.append("<html><body>");
+        details.append("<h1>Saving Goal Details</h1>");
+        details.append("<p><b>Name:</b> ").append(goalToShow.getName()).append("</p>");
+        details.append("<p><b>Description:</b> ").append(goalToShow.getDescription() != null ? goalToShow.getDescription() : "N/A").append("</p>");
+        details.append(String.format("<p><b>Target Amount:</b> %.2f</p>", goalToShow.getTargetAmount()));
+        details.append(String.format("<p><b>Current Amount:</b> %.2f (%.2f%%)</p>", goalToShow.getCurrentAmount(), goalToShow.getProgressPercentage()));
+        details.append(String.format("<p><b>Monthly Contribution:</b> %.2f</p>", goalToShow.getMonthlyContribution()));
+        details.append("<p><b>Start Date:</b> ").append(goalToShow.getStartDate() != null ? goalToShow.getStartDate().format(DateTimeFormatter.ISO_LOCAL_DATE) : "N/A").append("</p>");
+        details.append("<p><b>Target Date:</b> ").append(goalToShow.getTargetDate() != null ? goalToShow.getTargetDate().format(DateTimeFormatter.ISO_LOCAL_DATE) : "N/A").append("</p>");
+        details.append("<p><b>Active:</b> ").append(goalToShow.isActive() ? "Yes" : "No").append("</p>");
+        details.append("</body></html>");
+
+        JOptionPane.showMessageDialog(this, details.toString(), "Saving Goal: " + goalToShow.getName(), JOptionPane.INFORMATION_MESSAGE);
     }
 }

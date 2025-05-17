@@ -6,10 +6,6 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-// Added imports for new model classes
-import com.financetracker.model.SpecialDate;
-import com.financetracker.model.SavingGoal;
-
 /**
  * 应用程序设置类
  */
@@ -32,6 +28,8 @@ public class Settings implements Serializable {
     // New fields for Special Dates and Saving Goals
     private List<SpecialDate> specialDates;
     private List<SavingGoal> savingGoals;
+    private double overallAccountBalance;
+    private String lastMonthClosed; // Stores YYYY-MM of the last financial month closed
     
     /**
      * 默认构造函数
@@ -64,6 +62,8 @@ public class Settings implements Serializable {
         // Initialize new lists
         this.specialDates = new ArrayList<>();
         this.savingGoals = new ArrayList<>();
+        this.overallAccountBalance = 0.0;
+        this.lastMonthClosed = ""; // Or a sensible default like one month before app's first possible use
     }
 
     // Getters and Setters
@@ -228,6 +228,8 @@ public class Settings implements Serializable {
         this.budgetStartDay = 1;
         this.specialDates = new ArrayList<>();
         this.savingGoals = new ArrayList<>();
+        this.overallAccountBalance = 0.0;
+        this.lastMonthClosed = "";
     }
     
     /**
@@ -349,5 +351,22 @@ public class Settings implements Serializable {
 
     public boolean removeIncomeCategory(String category) {
         return this.incomeCategories.remove(category);
+    }
+
+    // Getters and Setters for new fields
+    public double getOverallAccountBalance() {
+        return overallAccountBalance;
+    }
+
+    public void setOverallAccountBalance(double overallAccountBalance) {
+        this.overallAccountBalance = overallAccountBalance;
+    }
+
+    public String getLastMonthClosed() {
+        return lastMonthClosed;
+    }
+
+    public void setLastMonthClosed(String lastMonthClosed) {
+        this.lastMonthClosed = lastMonthClosed;
     }
 }

@@ -60,6 +60,9 @@ public class SettingsService {
             if (settings.getSavingGoals() == null) {
                 settings.setSavingGoals(new ArrayList<>());
             }
+            if (settings.getLastMonthClosed() == null) {
+                settings.setLastMonthClosed("");
+            }
             return true;
         }
     }

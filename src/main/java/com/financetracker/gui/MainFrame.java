@@ -397,6 +397,10 @@ public class MainFrame extends JFrame {
         return transactionService;
     }
 
+    public HomePanel getHomePanel() {
+        return homePanel;
+    }
+
     /**
      * 刷新所有面板中的类别列表
      */

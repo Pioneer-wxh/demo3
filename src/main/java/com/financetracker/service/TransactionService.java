@@ -423,11 +423,10 @@ public class TransactionService {
                                     // 根据类别和描述再次判断收入/支出
                                     boolean suggestedType = autoDetectIsExpense(description, amount, category);
                                     // 如果类别是典型的收入类别，优先使用类别判断结果
-                                    if (category.contains("收入") || category.contains("工资") || 
-                                        category.contains("奖金") || category.contains("退款") ||
-                                        category.equals("工资") || category.equals("奖金") || 
-                                        category.equals("投资收益") || category.equals("退款") || 
-                                        category.equals("其他收入")) {
+                                    // Use English categories for checking income type
+                                    List<String> incomeCategories = getStandardIncomeCategories(); // Helper method to get defined income categories
+                                    final String currentCategory = category; // Use a final variable for the lambda
+                                    if (incomeCategories.stream().anyMatch(incomeCat -> incomeCat.equalsIgnoreCase(currentCategory))) {
                                         transactionIsExpense = false;
                                     } else if (suggestedType) {
                                         // 如果自动检测为支出，则采用
@@ -582,118 +581,89 @@ public class TransactionService {
         
         // 收入类别
         if (!isExpense) {
-            if (lowerDesc.contains("工资") || lowerDesc.contains("薪水") || lowerDesc.contains("salary") || lowerDesc.contains("payroll")) {
-                return "Salary"; // 工资
-            } else if (lowerDesc.contains("奖金") || lowerDesc.contains("bonus") || lowerDesc.contains("award")) {
-                return "Bonus"; // 奖金
-            } else if (lowerDesc.contains("投资") || lowerDesc.contains("股票") || lowerDesc.contains("基金") || 
-                       lowerDesc.contains("invest") || lowerDesc.contains("stock") || lowerDesc.contains("fund") || lowerDesc.contains("financial")) {
-                return "Investment"; // 投资收益
-            } else if (lowerDesc.contains("利息") || lowerDesc.contains("interest") || (lowerDesc.contains("bank") && lowerDesc.contains("deposit"))) {
-                return "Interest"; // 利息
-            } else if (lowerDesc.contains("退款") || lowerDesc.contains("refund") || lowerDesc.contains("reimbursement")) {
-                return "Refund"; // 退款
-            } else if (lowerDesc.contains("礼物") || lowerDesc.contains("礼金") || lowerDesc.contains("gift") || lowerDesc.contains("present")) {
-                return "Gift"; // 礼物/礼金
-            } else if (lowerDesc.contains("兼职") || lowerDesc.contains("副业") || lowerDesc.contains("freelance") || lowerDesc.contains("part-time job")) {
-                return "Freelance/Part-time"; // 兼职/副业
+            if (lowerDesc.contains("salary") || lowerDesc.contains("payroll")) {
+                return "Salary";
+            } else if (lowerDesc.contains("bonus") || lowerDesc.contains("award")) {
+                return "Bonus";
+            } else if (lowerDesc.contains("invest") || lowerDesc.contains("stock") || lowerDesc.contains("fund") || lowerDesc.contains("financial")) {
+                return "Investment";
+            } else if (lowerDesc.contains("interest") || (lowerDesc.contains("bank") && lowerDesc.contains("deposit"))) {
+                return "Interest";
+            } else if (lowerDesc.contains("refund") || lowerDesc.contains("reimbursement")) {
+                return "Refund";
+            } else if (lowerDesc.contains("gift") || lowerDesc.contains("present")) {
+                return "Gift";
+            } else if (lowerDesc.contains("freelance") || lowerDesc.contains("part-time job")) {
+                return "Freelance/Part-time";
             } else {
-                return "Other Income"; // 其他收入
+                return "Other Income";
             }
         }
         
         // 支出类别
-        // 注意：这里的关键词尽可能覆盖常见中英文表达
-        if (lowerDesc.contains("餐") || lowerDesc.contains("食") || lowerDesc.contains("饮") || lowerDesc.contains("饭") ||
-            lowerDesc.contains("food") || lowerDesc.contains("eat") || lowerDesc.contains("meal") || 
-            lowerDesc.contains("restaurant") || lowerDesc.contains("外卖") || lowerDesc.contains("午餐") || 
-            lowerDesc.contains("晚餐") || lowerDesc.contains("早餐") || lowerDesc.contains("买菜") || 
-            lowerDesc.contains("grocery") || lowerDesc.contains("supermarket") || lowerDesc.contains("dining")) {
-            return "Food"; // 餐饮
-        } else if (lowerDesc.contains("购物") || lowerDesc.contains("买") || lowerDesc.contains("商店") ||
-                   lowerDesc.contains("shop") || lowerDesc.contains("buy") || lowerDesc.contains("purchase") || 
+        if (lowerDesc.contains("food") || lowerDesc.contains("eat") || lowerDesc.contains("meal") || 
+            lowerDesc.contains("restaurant") || lowerDesc.contains("grocery") || lowerDesc.contains("supermarket") || lowerDesc.contains("dining")) {
+            return "Food";
+        } else if (lowerDesc.contains("shop") || lowerDesc.contains("buy") || lowerDesc.contains("purchase") || 
                    lowerDesc.contains("store") || lowerDesc.contains("mall") || lowerDesc.contains("online") ||
                    lowerDesc.contains("taobao") || lowerDesc.contains("jd") || lowerDesc.contains("amazon") || lowerDesc.contains("apparel")) {
-             // 将'服装'合并入'购物' 或保持独立，这里暂时合并以简化，但要避免与下面的'Clothing'冲突
-             // 如果服装是高频独立类别，应单独处理
-            if (lowerDesc.contains("衣") || lowerDesc.contains("服") || lowerDesc.contains("鞋") || 
-                lowerDesc.contains("包") || lowerDesc.contains("cloth") || lowerDesc.contains("shoe") || 
+            if (lowerDesc.contains("cloth") || lowerDesc.contains("shoe") || 
                 lowerDesc.contains("bag") || lowerDesc.contains("wear") || lowerDesc.contains("fashion")) {
-                return "Clothing"; // 服装，独立出来
+                return "Clothing";
             }
-            return "Shopping"; // 购物
-        } else if (lowerDesc.contains("交通") || lowerDesc.contains("车") || lowerDesc.contains("公交") || 
-                   lowerDesc.contains("地铁") || lowerDesc.contains("的士") || lowerDesc.contains("打车") ||
-                   lowerDesc.contains("油费") || lowerDesc.contains("加油") || lowerDesc.contains("停车") ||
-                   lowerDesc.contains("traffic") || lowerDesc.contains("bus") || lowerDesc.contains("subway") || 
+            return "Shopping";
+        } else if (lowerDesc.contains("traffic") || lowerDesc.contains("bus") || lowerDesc.contains("subway") || 
                    lowerDesc.contains("taxi") || lowerDesc.contains("didi") || lowerDesc.contains("train") || 
                    lowerDesc.contains("flight") || lowerDesc.contains("gas") || lowerDesc.contains("fuel") || 
                    lowerDesc.contains("parking")) {
-            return "Transportation"; // 交通
-        } else if (lowerDesc.contains("住") || lowerDesc.contains("房") || lowerDesc.contains("租") || 
-                   lowerDesc.contains("月租") || lowerDesc.contains("房贷") || lowerDesc.contains("物业") ||
-                   lowerDesc.contains("酒店") || lowerDesc.contains("宿舍") || 
-                   lowerDesc.contains("house") || lowerDesc.contains("rent") || lowerDesc.contains("mortgage") ||
+            return "Transportation";
+        } else if (lowerDesc.contains("house") || lowerDesc.contains("rent") || lowerDesc.contains("mortgage") ||
                    lowerDesc.contains("hotel") || lowerDesc.contains("property fee") || lowerDesc.contains("accommodation")) {
-            return "Housing"; // 住房
-        } else if (lowerDesc.contains("水") || lowerDesc.contains("电") || lowerDesc.contains("气") || 
-                   lowerDesc.contains("网费") || lowerDesc.contains("宽带") || lowerDesc.contains("话费") ||
-                   lowerDesc.contains("utility") || lowerDesc.contains("water") || 
+            return "Housing";
+        } else if (lowerDesc.contains("utility") || lowerDesc.contains("water") || 
                    lowerDesc.contains("electricity") || lowerDesc.contains("gas") || 
                    lowerDesc.contains("internet") || (lowerDesc.contains("phone") && lowerDesc.contains("bill"))) {
-            return "Utilities"; // 水电煤网等杂项费用 (之前叫 水电煤，现在叫 Utilities)
-        } else if (lowerDesc.contains("通讯") || (lowerDesc.contains("phone") && !lowerDesc.contains("bill")) || // 避免与水电煤中的话费混淆
+            return "Utilities";
+        } else if ((lowerDesc.contains("phone") && !lowerDesc.contains("bill")) ||
                    lowerDesc.contains("mobile") || lowerDesc.contains("communication")) {
-            return "Communication"; // 通讯 (手机充值等，区别于家庭宽带账单)
-        } else if (lowerDesc.contains("娱乐") || lowerDesc.contains("玩") || lowerDesc.contains("电影") || 
-                   lowerDesc.contains("游戏") || lowerDesc.contains("旅游") || lowerDesc.contains("演唱会") || 
-                   lowerDesc.contains("体育") || lowerDesc.contains("爱好") || lowerDesc.contains("酒吧") ||
-                   lowerDesc.contains("KTV") || lowerDesc.contains("表演") || 
-                   lowerDesc.contains("entertainment") || lowerDesc.contains("movie") || lowerDesc.contains("game") || 
+            return "Communication";
+        } else if (lowerDesc.contains("entertainment") || lowerDesc.contains("movie") || lowerDesc.contains("game") || 
                    lowerDesc.contains("travel") || lowerDesc.contains("concert") || lowerDesc.contains("sport") || 
                    lowerDesc.contains("hobby")) {
-            return "Entertainment"; // 娱乐
-        } else if (lowerDesc.contains("衣") || lowerDesc.contains("服") || lowerDesc.contains("鞋") || 
-                   lowerDesc.contains("包") || lowerDesc.contains("cloth") || lowerDesc.contains("shoe") || 
-                   lowerDesc.contains("bag") || lowerDesc.contains("wear") || lowerDesc.contains("fashion")) {
-            // 这个判断放前面 Shopping 里了，但为了确保独立性，这里也保留，如果前面没匹配到 Shopping 但明确是服装
-            return "Clothing"; // 服装
-        } else if (lowerDesc.contains("医") || lowerDesc.contains("药") || lowerDesc.contains("病") || 
-                   lowerDesc.contains("诊所") || lowerDesc.contains("医院") || lowerDesc.contains("体检") ||
-                   lowerDesc.contains("medical") || lowerDesc.contains("medicine") || 
+            return "Entertainment";
+        } else if (lowerDesc.contains("medical") || lowerDesc.contains("medicine") || 
                    lowerDesc.contains("hospital") || lowerDesc.contains("health") || lowerDesc.contains("doctor") || 
                    lowerDesc.contains("pharmacy")) {
-            return "Healthcare"; // 医疗
-        } else if (lowerDesc.contains("教育") || lowerDesc.contains("学") || lowerDesc.contains("培训") || 
-                   lowerDesc.contains("课") || lowerDesc.contains("辅导") || lowerDesc.contains("书") ||
-                   lowerDesc.contains("学费") ||
-                   lowerDesc.contains("education") || lowerDesc.contains("school") || 
+            return "Healthcare";
+        } else if (lowerDesc.contains("education") || lowerDesc.contains("school") || 
                    lowerDesc.contains("course") || lowerDesc.contains("book") || 
                    lowerDesc.contains("training") || lowerDesc.contains("tuition")) {
-            return "Education"; // 教育
-        } else if (lowerDesc.contains("孩子") || lowerDesc.contains("宝宝") || lowerDesc.contains("儿童") || 
-                   lowerDesc.contains("child") || lowerDesc.contains("kid") || lowerDesc.contains("baby")) {
-            return "Kids"; // 孩子相关
-        } else if (lowerDesc.contains("宠物") || lowerDesc.contains("猫") || lowerDesc.contains("狗") ||
-                   lowerDesc.contains("pet") || lowerDesc.contains("cat") || lowerDesc.contains("dog")) {
-            return "Pets"; // 宠物相关
-        } else if (lowerDesc.contains("保险") || lowerDesc.contains("insurance")) {
-            return "Insurance"; // 保险
-        } else if (lowerDesc.contains("税") || lowerDesc.contains("tax")) {
-            return "Taxes"; // 税费
-        } else if (lowerDesc.contains("捐赠") || lowerDesc.contains("慈善") || lowerDesc.contains("donation") || lowerDesc.contains("charity")) {
-            return "Donation"; // 捐赠
-        } else if (lowerDesc.contains("修理") || lowerDesc.contains("维修") || lowerDesc.contains("保养") ||
-                   lowerDesc.contains("repair") || lowerDesc.contains("maintenance")) {
-            return "Repairs/Maintenance"; // 修理维护
-        } else if (lowerDesc.contains("运动") || lowerDesc.contains("健身") || lowerDesc.contains("gym") || lowerDesc.contains("fitness")) {
-            return "Fitness/Sports"; // 运动健身
-        } else if (lowerDesc.contains("订阅") || lowerDesc.contains("会员") || lowerDesc.contains("subscription") || lowerDesc.contains("membership")) {
-            return "Subscriptions/Memberships"; // 订阅/会员
+            return "Education";
+        } else if (lowerDesc.contains("child") || lowerDesc.contains("kid") || lowerDesc.contains("baby")) {
+            return "Kids";
+        } else if (lowerDesc.contains("pet") || lowerDesc.contains("cat") || lowerDesc.contains("dog")) {
+            return "Pets";
+        } else if (lowerDesc.contains("insurance")) {
+            return "Insurance";
+        } else if (lowerDesc.contains("tax")) {
+            return "Taxes";
+        } else if (lowerDesc.contains("donation") || lowerDesc.contains("charity")) {
+            return "Donation";
+        } else if (lowerDesc.contains("repair") || lowerDesc.contains("maintenance")) {
+            return "Repairs/Maintenance";
+        } else if (lowerDesc.contains("gym") || lowerDesc.contains("fitness")) {
+            return "Fitness/Sports";
+        } else if (lowerDesc.contains("subscription") || lowerDesc.contains("membership")) {
+            return "Subscriptions/Memberships";
         }
         
-        // 如果没有匹配到，返回默认类别
-        return "Others"; // 其他支出 (之前是 "其他支出")
+        return "Others";
+    }
+    
+    // Helper method to provide a standard list of income categories (in English)
+    // This should ideally come from Settings or a shared constant.
+    private List<String> getStandardIncomeCategories() {
+        return List.of("Salary", "Bonus", "Investment", "Interest", "Refund", "Gift", "Freelance/Part-time", "Other Income");
     }
     
     /**
@@ -734,18 +704,15 @@ public class TransactionService {
         
         // 收入关键词
         String[] incomeKeywords = {
-            "收入", "工资", "薪水", "薪资", "奖金", "退款", "报销", "投资收益", "利息", "股息", "分红",
-            "返还", "退税", "补贴", "津贴", "福利", "租金收入", "兼职", "外快", "副业", "红包",
             "salary", "income", "bonus", "refund", "reimbursement", "interest", "dividend",
             "return", "rebate", "subsidy", "allowance", "benefit", "rent income", "part-time",
-            "side job", "gift", "payroll", "revenue", "earnings" // 添加更多英文收入关键词
+            "side job", "gift", "payroll", "revenue", "earnings"
         };
         
         // 支出关键词
         String[] expenseKeywords = {
-            "支出", "消费", "购买", "买", "付", "缴", "交", "花费", "费用", "支付", "账单",
             "expense", "cost", "purchase", "buy", "pay", "payment", "bill", "fee", "charge",
-            "spend", "spent", "order" // 添加更多英文支出关键词
+            "spend", "spent", "order"
         };
         
         // 检查描述中是否包含收入关键词
@@ -897,7 +864,7 @@ public class TransactionService {
 
     /**
      * Calculates the remaining balance for the current financial month.
-     * Remaining Balance = Total Income - Total Expenses - Sum of Monthly Contributions for active Saving Goals.
+     * Remaining Balance = Total Income - Total Expenses, without subtracting active savings contributions.
      *
      * @param settings The application settings, used to get saving goals.
      * @return The calculated remaining balance.
@@ -907,16 +874,7 @@ public class TransactionService {
         double totalIncome = getTotalIncome(transactions);
         double totalExpense = getTotalExpense(transactions);
 
-        double activeSavingContributions = 0.0;
-        if (settings != null && settings.getSavingGoals() != null) {
-            for (SavingGoal goal : settings.getSavingGoals()) {
-                if (goal.isActive()) {
-                    activeSavingContributions += goal.getMonthlyContribution();
-                }
-            }
-        }
-        
-        return totalIncome - totalExpense - activeSavingContributions;
+        return totalIncome - totalExpense;
     }
 
     /**
@@ -1011,5 +969,101 @@ public class TransactionService {
             }
         }
         return allGoalsProcessedSuccessfully;
+    }
+
+    /**
+     * Performs month-end closing for financial months that have not yet been closed.
+     * Calculates the surplus for each completed financial month since the last closing,
+     * adds it to the overall account balance, and updates the last closed month in settings.
+     *
+     * @param settingsService The service to access and save application settings.
+     * @return true if any month was successfully closed, false otherwise or if an error occurred.
+     */
+    public boolean performMonthEndClosing(SettingsService settingsService) {
+        if (settingsService == null) {
+            LOGGER.log(Level.SEVERE, "SettingsService is null. Cannot perform month-end closing.");
+            return false;
+        }
+        Settings settings = settingsService.getSettings();
+        if (settings == null) {
+            LOGGER.log(Level.SEVERE, "Settings are null. Cannot perform month-end closing.");
+            return false;
+        }
+
+        int monthStartDay = settings.getMonthStartDay();
+        String lastClosedMonthStr = settings.getLastMonthClosed(); // Format: YYYY-MM
+        LocalDate today = LocalDate.now();
+        boolean monthClosedThisRun = false;
+
+        // Determine the YearMonth of the financial month that ends *before* the current financial month starts.
+        // This is the latest month we can safely close.
+        LocalDate currentFinancialMonthStartDate;
+        if (today.getDayOfMonth() >= monthStartDay) {
+            currentFinancialMonthStartDate = today.withDayOfMonth(monthStartDay);
+        } else {
+            currentFinancialMonthStartDate = today.minusMonths(1).withDayOfMonth(monthStartDay);
+        }
+        // The latest financial month we can close is the one that started *before* currentFinancialMonthStartDate
+        YearMonth latestClosableFinancialYearMonth = YearMonth.from(currentFinancialMonthStartDate.minusMonths(1));
+
+
+        YearMonth startClosingFromYearMonth;
+        if (lastClosedMonthStr == null || lastClosedMonthStr.trim().isEmpty()) {
+            // If no month has ever been closed, we can only close the immediately preceding financial month.
+            // This simplifies the first run: we don't try to close all historical months automatically.
+            // A separate utility might be needed for historical bulk closing if desired.
+            LOGGER.log(Level.INFO, "No previous month closed. Attempting to close the latest completed financial month: " + latestClosableFinancialYearMonth);
+            startClosingFromYearMonth = latestClosableFinancialYearMonth;
+        } else {
+            try {
+                YearMonth lastClosedYM = YearMonth.parse(lastClosedMonthStr, DateTimeFormatter.ofPattern("yyyy-MM"));
+                startClosingFromYearMonth = lastClosedYM.plusMonths(1);
+            } catch (Exception e) {
+                LOGGER.log(Level.SEVERE, "Invalid format for lastMonthClosed: " + lastClosedMonthStr + ". Cannot proceed with month-end closing.", e);
+                return false;
+            }
+        }
+
+        // Loop from startClosingFromYearMonth up to (and including) latestClosableFinancialYearMonth
+        YearMonth currentMonthToAttemptClose = startClosingFromYearMonth;
+        while (!currentMonthToAttemptClose.isAfter(latestClosableFinancialYearMonth)) {
+            LOGGER.log(Level.INFO, "Attempting to close financial month: " + currentMonthToAttemptClose);
+
+            // Get the date range for the financial month to close
+            // The 'year' and 'month' for getFinancialMonthRange should correspond to the start of that financial month.
+            Map<String, LocalDate> financialMonthDateRange = getFinancialMonthRange(currentMonthToAttemptClose.getYear(), currentMonthToAttemptClose.getMonthValue());
+            LocalDate periodStartDate = financialMonthDateRange.get("startDate");
+            LocalDate periodEndDate = financialMonthDateRange.get("endDate");
+
+            if (periodEndDate.isAfter(today.minusDays(1))) { // Ensure the financial month has fully passed
+                 LOGGER.log(Level.INFO, "Financial month " + currentMonthToAttemptClose + " has not fully passed. Skipping.");
+                 break; // Stop if we've reached a month that isn't fully over
+            }
+
+            List<Transaction> transactionsForMonth = getTransactionsForDateRange(periodStartDate, periodEndDate);
+            double surplus = getNetAmount(transactionsForMonth);
+
+            LOGGER.log(Level.INFO, String.format("Surplus for %s (%s to %s): %.2f",
+                    currentMonthToAttemptClose, periodStartDate, periodEndDate, surplus));
+
+            settings.setOverallAccountBalance(settings.getOverallAccountBalance() + surplus);
+            settings.setLastMonthClosed(currentMonthToAttemptClose.format(DateTimeFormatter.ofPattern("yyyy-MM")));
+
+            if (settingsService.saveSettings()) {
+                LOGGER.log(Level.INFO, "Successfully closed financial month " + currentMonthToAttemptClose +
+                        ". New overall account balance: " + settings.getOverallAccountBalance());
+                monthClosedThisRun = true;
+            } else {
+                LOGGER.log(Level.SEVERE, "Failed to save settings after closing month " + currentMonthToAttemptClose +
+                        ". Month-end closing process halted.");
+                // Potentially rollback in-memory changes to settings if save fails?
+                // For now, if save fails, the loop will stop, and lastMonthClosed won't advance in memory for the next iteration.
+                // The balance might be updated in memory but not persisted. This state is problematic.
+                // It's better to halt.
+                return false; // Critical error, stop processing.
+            }
+            currentMonthToAttemptClose = currentMonthToAttemptClose.plusMonths(1);
+        }
+        return monthClosedThisRun;
     }
 }
