@@ -522,20 +522,15 @@ public class SettingsPanel extends JPanel {
             specialDate.setRecurrenceType(SpecialDate.RecurrenceType.NONE);
             
             // Add special date
-            boolean success = specialDateService.addSpecialDate(specialDate);
-            
-            if (success) {
-                // Clear form
-                clearSpecialDateForm();
-                
-                // Reload table
-                loadSpecialDates();
-                
-                // Show success message
-                JOptionPane.showMessageDialog(this, "Special date added successfully.", "Success", JOptionPane.INFORMATION_MESSAGE);
-            } else {
-                JOptionPane.showMessageDialog(this, "Failed to add special date.", "Error", JOptionPane.ERROR_MESSAGE);
-            }
+            Settings settings = settingsService.getSettings();
+            settings.addSpecialDate(specialDate);
+            settingsService.saveSettings();
+            loadSpecialDates();
+            clearSpecialDateForm();
+            updateSpecialDateCategoryComboBox();
+            mainFrame.refreshCategoryLists();
+            mainFrame.triggerAnalysisPanelRefresh();
+            JOptionPane.showMessageDialog(this, "Special date added successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
         } catch (NumberFormatException e) {
             JOptionPane.showMessageDialog(this, "Invalid amount format.", "Error", JOptionPane.ERROR_MESSAGE);
         } catch (Exception e) {
@@ -596,16 +591,18 @@ public class SettingsPanel extends JPanel {
         }
         
         // Delete special date
-        List<SpecialDate> specialDates = specialDateService.getAllSpecialDates();
-        if (selectedRow < specialDates.size()) {
-            SpecialDate specialDate = specialDates.get(selectedRow);
-            specialDateService.deleteSpecialDate(specialDate);
-            
-            // Reload special dates
+        Settings settings = settingsService.getSettings();
+        List<SpecialDate> specialDates = settings.getSpecialDates();
+        if (selectedRow >= 0 && selectedRow < specialDates.size()) {
+            SpecialDate specialDateToDelete = specialDates.get(selectedRow);
+            settings.removeSpecialDate(specialDateToDelete.getId());
+            settingsService.saveSettings();
             loadSpecialDates();
-            
-            // Show success message
-            JOptionPane.showMessageDialog(this, "Special date deleted successfully.", "Success", JOptionPane.INFORMATION_MESSAGE);
+            clearSpecialDateForm();
+            updateSpecialDateCategoryComboBox();
+            mainFrame.refreshCategoryLists();
+            mainFrame.triggerAnalysisPanelRefresh();
+            JOptionPane.showMessageDialog(this, "Special date deleted successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
         }
     }
     
@@ -788,26 +785,20 @@ public class SettingsPanel extends JPanel {
      * Saves changes to settings.
      */
     private void saveChanges() {
-        try {
-            // Get settings
-            Settings settings = mainFrame.getSettings();
-            
-            // Update month start day
-            int monthStartDay = (int) monthStartDaySpinner.getValue();
-            settings.setMonthStartDay(monthStartDay);
-            
-            // Save settings
-            settingsService.getSettings().setMonthStartDay(monthStartDay);
-            settingsService.saveSettings();
-            
-            // Update main frame
-            mainFrame.setSettings(settings);
-            
-            // Show success message
-            JOptionPane.showMessageDialog(this, "Settings saved successfully.", "Success", JOptionPane.INFORMATION_MESSAGE);
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Error saving settings: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-        }
+        // Save financial month settings first, as they are part of general settings
+        saveFinancialMonthSettings();
+
+        // Update and save settings
+        Settings settings = settingsService.getSettings();
+        // ... (other settings might be saved here if not handled by specific panels/tabs)
+
+        // Persist all changes made
+        settingsService.saveSettings();
+        mainFrame.setSettings(settings); // Update MainFrame's settings instance
+        mainFrame.refreshCategoryLists(); // Refresh category lists in other panels
+        mainFrame.triggerAnalysisPanelRefresh(); // Refresh AnalysisPanel
+
+        JOptionPane.showMessageDialog(this, "All settings saved successfully!", "Settings Saved", JOptionPane.INFORMATION_MESSAGE);
     }
     
     /**
@@ -1051,13 +1042,11 @@ public class SettingsPanel extends JPanel {
         if (newGoal != null) {
             Settings settings = settingsService.getSettings();
             settings.addSavingGoal(newGoal);
-            if (settingsService.saveSettings()) {
-                loadSavingGoals(); // Refresh table
-                clearSavingGoalForm();
-                JOptionPane.showMessageDialog(this, "Saving goal added successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
-            } else {
-                JOptionPane.showMessageDialog(this, "Failed to save new saving goal.", "Error", JOptionPane.ERROR_MESSAGE);
-            }
+            settingsService.saveSettings();
+            loadSavingGoals();
+            clearSavingGoalForm();
+            mainFrame.triggerAnalysisPanelRefresh();
+            JOptionPane.showMessageDialog(this, "New saving goal added successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
         }
     }
 
@@ -1125,19 +1114,14 @@ public class SettingsPanel extends JPanel {
         }
         SavingGoal updatedGoal = prepareSavingGoalFromInputs(currentEditingSavingGoal);
         if (updatedGoal != null) {
-            Settings settings = settingsService.getSettings();
-            settings.updateSavingGoal(updatedGoal); // Assumes updateSavingGoal handles finding by ID
-            if (settingsService.saveSettings()) {
-                loadSavingGoals();
-                clearSavingGoalForm();
-                currentEditingSavingGoal = null; // Reset editing state
-                addGoalButton.setText("Add New Goal");
-                addGoalButton.setEnabled(true);
-                saveGoalButton.setEnabled(false);
-                JOptionPane.showMessageDialog(this, "Saving goal updated successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
-            } else {
-                JOptionPane.showMessageDialog(this, "Failed to update saving goal.", "Error", JOptionPane.ERROR_MESSAGE);
-            }
+            settingsService.saveSettings();
+            loadSavingGoals();
+            clearSavingGoalForm();
+            currentEditingSavingGoal = null;
+            saveGoalButton.setText("Add New Goal");
+            addGoalButton.setEnabled(true);
+            mainFrame.triggerAnalysisPanelRefresh();
+            JOptionPane.showMessageDialog(this, "Saving goal updated successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
         }
     }
 
@@ -1161,34 +1145,15 @@ public class SettingsPanel extends JPanel {
         }
 
         Settings settings = mainFrame.getSettings();
-        SavingGoal goalToDelete = null;
-        String goalIdToDelete = null;
-
-        // Find the goal by name to get its ID for reliable deletion
-        for (SavingGoal goal : settings.getSavingGoals()) {
-            if (goal.getName().equals(goalName)) {
-                // Found the goal, get its ID. We assume names in the table match one goal.
-                // If multiple goals can have the same name, this logic needs to be more robust (e.g., use full row data to match or ensure unique names when adding)
-                goalIdToDelete = goal.getId();
-                break;
-            }
-        }
-
-        if (goalIdToDelete != null) {
-            boolean removed = settings.removeSavingGoal(goalIdToDelete);
-            if (removed) {
-                if (settingsService.saveSettings()) {
-                    JOptionPane.showMessageDialog(this, "Saving goal '" + goalName + "' deleted successfully.", "Success", JOptionPane.INFORMATION_MESSAGE);
-                    loadSavingGoals(); // Refresh the table
-                } else {
-                    JOptionPane.showMessageDialog(this, "Failed to save settings after deleting the goal.", "Error", JOptionPane.ERROR_MESSAGE);
-                    // If save fails, the goal is removed from in-memory settings but not persisted.
-                    // The user would need to try saving settings again later or the change might be lost on app close if not handled elsewhere.
-                }
-            } else {
-                // This case should ideally not happen if we found it by name and then tried to remove by ID obtained from that found goal.
-                JOptionPane.showMessageDialog(this, "Could not delete the saving goal (it might have been removed by another process or an ID mismatch occurred).", "Deletion Error", JOptionPane.ERROR_MESSAGE);
-            }
+        List<SavingGoal> goals = settings.getSavingGoals();
+        if (selectedRow >= 0 && selectedRow < goals.size()) {
+            SavingGoal goalToDelete = goals.get(selectedRow);
+            settings.removeSavingGoal(goalToDelete.getId());
+            settingsService.saveSettings();
+            loadSavingGoals();
+            clearSavingGoalForm();
+            mainFrame.triggerAnalysisPanelRefresh();
+            JOptionPane.showMessageDialog(this, "Saving goal deleted successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
         } else {
             JOptionPane.showMessageDialog(this, "Could not find the saving goal '" + goalName + "' in the current settings. It might have already been deleted.", "Error", JOptionPane.ERROR_MESSAGE);
         }

@@ -402,6 +402,18 @@ public class MainFrame extends JFrame {
     }
 
     /**
+     * Triggers a refresh of all data and views within the AnalysisPanel.
+     */
+    public void triggerAnalysisPanelRefresh() {
+        if (analysisPanel != null) {
+            System.out.println("MainFrame: Triggering AnalysisPanel refresh.");
+            analysisPanel.refreshAllAnalysisData();
+        } else {
+            System.err.println("MainFrame: AnalysisPanel is null, cannot trigger refresh.");
+        }
+    }
+
+    /**
      * 刷新所有面板中的类别列表
      */
     public void refreshCategoryLists() {

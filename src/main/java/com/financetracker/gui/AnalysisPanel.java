@@ -76,6 +76,15 @@ public class AnalysisPanel extends JPanel {
     private JRadioButton financialModeRadio;
     private boolean isFinancialMode = false; // 默认为普通对话模式
     
+    // Text areas for the Budget Panel
+    private JTextArea budgetSummaryTextArea;
+    private JTextArea categoryBudgetChartTextArea;
+    private JTextArea specialDatesTextArea;
+    
+    // Reference to the budget panel's text area if it exists and needs updating.
+    // Assuming budget panel has a JTextArea or similar to display budget info.
+    private JTextArea budgetDetailsTextArea; // Example: You'll need to initialize this if it's how budget is shown
+    
     /**
      * Constructor for AnalysisPanel.
      * 
@@ -416,67 +425,15 @@ public class AnalysisPanel extends JPanel {
         JPanel budgetSummaryPanel = new JPanel(new BorderLayout());
         budgetSummaryPanel.setBorder(BorderFactory.createTitledBorder("Budget Forecast & Adjustments"));
         
-        JTextArea budgetSummaryTextArea = new JTextArea();
-        budgetSummaryTextArea.setEditable(false);
-        budgetSummaryTextArea.setLineWrap(true);
-        budgetSummaryTextArea.setWrapStyleWord(true);
-        budgetSummaryTextArea.setFont(UIManager.getFont("Label.font"));
+        // Initialize class member
+        this.budgetSummaryTextArea = new JTextArea();
+        this.budgetSummaryTextArea.setEditable(false);
+        this.budgetSummaryTextArea.setLineWrap(true);
+        this.budgetSummaryTextArea.setWrapStyleWord(true);
+        this.budgetSummaryTextArea.setFont(UIManager.getFont("Label.font"));
 
-
-        LocalDate today = LocalDate.now();
-        YearMonth nextMonthYearMonth = YearMonth.from(today.plusMonths(1));
-        String monthName = nextMonthYearMonth.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault());
-        
-        StringBuilder summaryTextBuilder = new StringBuilder();
-        summaryTextBuilder.append("Budget Forecast for ").append(monthName).append(" ").append(nextMonthYearMonth.getYear()).append("\n\n");
-        
-        double avgIncome = calculateAverageIncome(6);
-        double avgExpense = calculateAverageExpense(6); // For context
-        
-        summaryTextBuilder.append("Based on your past 6 months of transactions (for context only):\n");
-        summaryTextBuilder.append(String.format("- Projected Average Income: %.2f\n", avgIncome));
-        summaryTextBuilder.append(String.format("- Projected Average Expenses: %.2f\n", avgExpense));
-        summaryTextBuilder.append(String.format("- Projected Average Savings (historical): %.2f\n\n", avgIncome - avgExpense));
-        
-        Settings currentSettings = settingsService.getSettings();
-        double baseBudget = 0.0;
-        String currency = "";
-        List<String> expenseCategories = new ArrayList<>();
-
-        if (currentSettings != null) {
-            baseBudget = currentSettings.getMonthlyBudget();
-            currency = currentSettings.getDefaultCurrency() != null ? currentSettings.getDefaultCurrency() : "";
-            summaryTextBuilder.append(String.format("Base Monthly Budget (from Settings): %.2f %s\n", baseBudget, currency));
-            if (currentSettings.getExpenseCategories() != null) {
-                expenseCategories.addAll(currentSettings.getExpenseCategories());
-            }
-        } else {
-            summaryTextBuilder.append("Base Monthly Budget: Not Set\n");
-        }
-        
-        Map<String, Double> categoryAdjustments = budgetAdjustmentService.getCategoryAdjustmentsForMonth(nextMonthYearMonth);
-        double totalAdjustments = 0;
-        
-        if (!categoryAdjustments.isEmpty()) {
-            summaryTextBuilder.append("\nSpecial Date Adjustments for Next Month:\n");
-            for (Map.Entry<String, Double> entry : categoryAdjustments.entrySet()) {
-                summaryTextBuilder.append(String.format("- %s: +%.2f %s\n", entry.getKey(), entry.getValue(), currency));
-                totalAdjustments += entry.getValue();
-            }
-            summaryTextBuilder.append(String.format("Total Increase from Special Dates: %.2f %s\n", totalAdjustments, currency));
-        } else {
-            summaryTextBuilder.append("\nNo specific budget adjustments from Special Dates for next month.\n");
-        }
-        
-        double finalProjectedExpenseBudget = baseBudget + totalAdjustments;
-        summaryTextBuilder.append(String.format("\nProjected Total Expense Budget for Next Month: %.2f %s\n", finalProjectedExpenseBudget, currency));
-
-        // A.4.1: Projected Savings for Next Month
-        double projectedSavingsNextMonth = avgIncome - finalProjectedExpenseBudget;
-        summaryTextBuilder.append(String.format("Projected Savings for Next Month (Avg. Income - Projected Budget): %.2f %s\n\n", projectedSavingsNextMonth, currency));
-        
-        budgetSummaryTextArea.setText(summaryTextBuilder.toString());
-        JScrollPane budgetSummaryScrollPane = new JScrollPane(budgetSummaryTextArea);
+        this.budgetSummaryTextArea.setText(generateBudgetSummaryText()); // Populate with generated text
+        JScrollPane budgetSummaryScrollPane = new JScrollPane(this.budgetSummaryTextArea);
         budgetSummaryPanel.add(budgetSummaryScrollPane, BorderLayout.CENTER);
         centralContentPanel.add(budgetSummaryPanel);
         centralContentPanel.add(Box.createRigidArea(new Dimension(0, 10))); // Spacing
@@ -485,128 +442,38 @@ public class AnalysisPanel extends JPanel {
         // A.4.1 & A.4.2: Category Budget Bar Chart Panel
         JPanel categoryBudgetChartPanel = new JPanel(new BorderLayout());
         categoryBudgetChartPanel.setBorder(BorderFactory.createTitledBorder("Next Month Category Budget Allocation"));
-        JTextArea categoryBudgetChartTextArea = new JTextArea();
-        categoryBudgetChartTextArea.setEditable(false);
-        categoryBudgetChartTextArea.setLineWrap(true);
-        categoryBudgetChartTextArea.setWrapStyleWord(true);
-        categoryBudgetChartTextArea.setFont(UIManager.getFont("Label.font")); // Monospaced font might be better for text bars
+        
+        // Initialize class member
+        this.categoryBudgetChartTextArea = new JTextArea();
+        this.categoryBudgetChartTextArea.setEditable(false);
+        this.categoryBudgetChartTextArea.setLineWrap(true);
+        this.categoryBudgetChartTextArea.setWrapStyleWord(true);
+        this.categoryBudgetChartTextArea.setFont(UIManager.getFont("Label.font")); // Monospaced font might be better for text bars
 
-        StringBuilder chartBuilder = new StringBuilder();
-        if (currentSettings != null && !expenseCategories.isEmpty()) {
-            Map<String, Double> historicalDistPercentages = calculateCategoryDistribution(6); // This returns percentages
-            double totalBudgetForChartMax = 0; // For scaling bars, find max category budget
-
-            // Calculate total budget for each category to find max for scaling
-            Map<String, Double> categoryTotalBudgets = new HashMap<>();
-            for (String category : expenseCategories) {
-                double historicalPercentage = historicalDistPercentages.getOrDefault(category, 0.0);
-                 // If a category has no history, its base allocation will be 0 unless we distribute remaining budget or use equal share.
-                // For simplicity, if no history, base is 0, relies on adjustments.
-                // Or, more fairly, if total historicalDistPercentages doesn't sum to 1 (e.g. new categories exist),
-                // distribute remaining portion of baseBudget or use equal share for new ones.
-                // For now, using direct historical percentage:
-                double baseAllocation = baseBudget * historicalPercentage;
-                double adjustment = categoryAdjustments.getOrDefault(category, 0.0);
-                double totalBudgetForCategory = baseAllocation + adjustment;
-                categoryTotalBudgets.put(category, totalBudgetForCategory);
-                if (totalBudgetForCategory > totalBudgetForChartMax) {
-                    totalBudgetForChartMax = totalBudgetForCategory;
-                }
-            }
-            
-            // Ensure totalBudgetForChartMax is not zero to avoid division by zero for bar scaling
-            if (totalBudgetForChartMax == 0 && finalProjectedExpenseBudget > 0) { // If all category budgets are 0, but there's a total budget
-                totalBudgetForChartMax = finalProjectedExpenseBudget; // Use total budget as max scale
-            } else if (totalBudgetForChartMax == 0) {
-                totalBudgetForChartMax = 1; // Avoid division by zero if everything is zero
-            }
-
-
-            chartBuilder.append(String.format("Allocation based on historical spending (past 6m) & special date adjustments. Total Budget: %.2f %s\n\n", finalProjectedExpenseBudget, currency));
-            for (String category : expenseCategories) {
-                double totalBudgetForCategory = categoryTotalBudgets.getOrDefault(category, 0.0);
-                double adjustment = categoryAdjustments.getOrDefault(category, 0.0);
-
-                chartBuilder.append(String.format("%-20s: ", category)); // Category name
-                
-                // Simple text bar
-                int barLength = (int) ((totalBudgetForCategory / totalBudgetForChartMax) * 30); // Scale bar to max 30 chars
-                if (totalBudgetForChartMax == 0) barLength = 0; // Handle case where max is 0
-
-                for (int i = 0; i < barLength; i++) {
-                    chartBuilder.append("*");
-                }
-                chartBuilder.append(String.format(" %.2f %s", totalBudgetForCategory, currency));
-                
-                // A.4.2: Highlight special date adjustments
-                if (adjustment > 0) {
-                    chartBuilder.append(String.format(" (+%.2f from special dates)", adjustment));
-                } else if (adjustment < 0) {
-                     chartBuilder.append(String.format(" (%.2f from special dates)", adjustment));
-                }
-                chartBuilder.append("\n");
-            }
-        } else {
-            chartBuilder.append("No expense categories defined in settings to display budget allocation.\n");
-        }
-        categoryBudgetChartTextArea.setText(chartBuilder.toString());
-        JScrollPane categoryBudgetChartScrollPane = new JScrollPane(categoryBudgetChartTextArea);
+        this.categoryBudgetChartTextArea.setText(generateCategoryBudgetText()); // Populate with generated text
+        JScrollPane categoryBudgetChartScrollPane = new JScrollPane(this.categoryBudgetChartTextArea);
         categoryBudgetChartPanel.add(categoryBudgetChartScrollPane, BorderLayout.CENTER);
         centralContentPanel.add(categoryBudgetChartPanel);
         
-        // panel.add(budgetSummaryPanel, BorderLayout.CENTER); // Old: budgetSummaryPanel was directly in panel's CENTER
-        panel.add(centralContentPanel, BorderLayout.CENTER); // New: Add combined panel to CENTER
+        panel.add(centralContentPanel, BorderLayout.CENTER);
 
 
         // A.4.3: Special Dates Display Panel as a sidebar (EAST)
         JPanel specialDatesDisplayPanel = new JPanel(new BorderLayout());
-        specialDatesDisplayPanel.setBorder(BorderFactory.createTitledBorder("Upcoming Special Dates in " + monthName));
+        specialDatesDisplayPanel.setBorder(BorderFactory.createTitledBorder("Upcoming Special Dates in " + YearMonth.now().plusMonths(1).getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault())));
         specialDatesDisplayPanel.setPreferredSize(new Dimension(300, 0)); // Give it a preferred width for sidebar
         
-        JTextArea specialDatesTextArea = new JTextArea();
-        specialDatesTextArea.setEditable(false);
-        specialDatesTextArea.setLineWrap(true);
-        specialDatesTextArea.setWrapStyleWord(true);
-        specialDatesTextArea.setFont(UIManager.getFont("Label.font"));
+        // Initialize class member
+        this.specialDatesTextArea = new JTextArea();
+        this.specialDatesTextArea.setEditable(false);
+        this.specialDatesTextArea.setLineWrap(true);
+        this.specialDatesTextArea.setWrapStyleWord(true);
+        this.specialDatesTextArea.setFont(UIManager.getFont("Label.font"));
         
-        StringBuilder specialDatesInfo = new StringBuilder();
-        if (currentSettings != null) {
-            List<SpecialDate> allSpecialDates = currentSettings.getSpecialDates();
-            boolean foundForNextMonth = false;
-            if (allSpecialDates != null) {
-                for (SpecialDate sd : allSpecialDates) {
-                    LocalDate occurrence = sd.getNextOccurrence(nextMonthYearMonth.atDay(1));
-                    if (occurrence != null && YearMonth.from(occurrence).equals(nextMonthYearMonth)) {
-                        if (!foundForNextMonth) {
-                            specialDatesInfo.append("The following special dates fall in ").append(monthName).append(":\n");
-                            foundForNextMonth = true;
-                        }
-                        specialDatesInfo.append(String.format("- %s (%s): %s. Affects '%s' by +%.2f %s.\n",
-                                sd.getName(),
-                                occurrence.format(DateTimeFormatter.ISO_LOCAL_DATE),
-                                sd.getDescription() != null ? sd.getDescription() : "No description",
-                                sd.getAffectedCategory(),
-                                sd.getAmountIncrease(),
-                                currency
-                        ));
-                        // Note: Cartoon image display (A.4.3) cannot be implemented here
-                        // without changes to SpecialDate model to include image paths.
-                    }
-                }
-            }
-            if (!foundForNextMonth) {
-                specialDatesInfo.append("No user-defined special dates found for ").append(monthName).append(".\n");
-            }
-        } else {
-             specialDatesInfo.append("Settings not available to load special dates.\n");
-        }
-        specialDatesInfo.append("\nTip: You can add/manage special dates in the Settings panel.");
+        this.specialDatesTextArea.setText(generateSpecialDatesText()); // Populate with generated text
+        specialDatesDisplayPanel.add(new JScrollPane(this.specialDatesTextArea), BorderLayout.CENTER);
         
-        specialDatesTextArea.setText(specialDatesInfo.toString());
-        specialDatesDisplayPanel.add(new JScrollPane(specialDatesTextArea), BorderLayout.CENTER);
-        
-        // panel.add(specialDatesDisplayPanel, BorderLayout.SOUTH); // Old: was SOUTH
-        panel.add(specialDatesDisplayPanel, BorderLayout.EAST); // New: A.4.3 "sidebar"
+        panel.add(specialDatesDisplayPanel, BorderLayout.EAST); 
         
         return panel;
     }
@@ -1168,5 +1035,297 @@ public class AnalysisPanel extends JPanel {
         // } else {
             // categoryComboBox.setSelectedItem("All Categories");
         // }
+    }
+
+    /**
+     * Public method to refresh all data and views within the AnalysisPanel.
+     * This should be called when underlying data (transactions, settings, special dates, goals) might have changed.
+     */
+    public void refreshAllAnalysisData() {
+        // Log or print that refresh is called
+        System.out.println("AnalysisPanel: Refreshing all analysis data...");
+
+        // 1. Refresh Current Month Tab (summary, category breakdown)
+        // Determine which view to update based on mode (normal or financial)
+        if (isFinancialMode) {
+            // Assuming yearComboBox and monthNameComboBox hold the selected financial period
+            int selectedYear = (Integer) yearComboBox.getSelectedItem();
+            // Month name needs to be parsed back to month number for financial view update
+            String selectedMonthName = (String) monthNameComboBox.getSelectedItem();
+            Month month = null;
+            for (int i = 1; i <= 12; i++) {
+                if (Month.of(i).getDisplayName(TextStyle.FULL, Locale.getDefault()).equals(selectedMonthName)) {
+                    month = Month.of(i);
+                    break;
+                }
+            }
+            if (month != null) {
+                updateFinancialMonthView(selectedYear, month.getValue());
+            } else {
+                updateCurrentFinancialMonthView(); // Fallback or default
+            }
+        } else {
+            // For "normal" mode, it might be based on LocalDate.now() or a specific date if that's a feature
+            updateCurrentMonthView(); // Or updateCurrentMonthView(LocalDate.now());
+        }
+
+        // 2. Refresh Budget of Next Month Tab
+        // This likely involves recalculating based on current transactions, settings, and special dates.
+        // Assuming createBudgetPanel() or a dedicated update method populates budgetDetailsTextArea or similar components.
+        // We might need a specific update method for the budget panel if createBudgetPanel just builds static UI.
+        // For now, let's assume re-populating the budget panel's core content is needed.
+        // If createBudgetPanel is lightweight and just populates text, we can call parts of it or a new update method.
+        updateBudgetPanelContents(); // Placeholder for the actual budget update logic
+
+        // 3. Refresh Saving Goals Tab
+        updateSavingGoalsProgressView();
+
+        // Potentially clear AI Assistant responses if they depend on the refreshed data context
+        if (aiResponseTextArea != null) {
+            // aiResponseTextArea.setText("Data has been refreshed. Please ask your query again if needed.");
+            // Or just leave it, as user might want to see previous response in old context.
+        }
+        
+        System.out.println("AnalysisPanel: Refresh complete.");
+    }
+
+    // Placeholder for method to update budget panel contents. Needs to be implemented.
+    private void updateBudgetPanelContents() {
+        // This method should re-fetch settings, special dates, transactions for next month,
+        // perform budget calculations, and update the UI components within the budgetPanel.
+        if (budgetPanel == null || settingsService == null || budgetAdjustmentService == null) {
+            System.err.println("AnalysisPanel: Cannot update budget panel, services or panel not initialized.");
+            return;
+        }
+        System.out.println("AnalysisPanel: Updating budget panel contents...");
+
+        if (this.budgetSummaryTextArea != null) {
+            this.budgetSummaryTextArea.setText(generateBudgetSummaryText());
+            this.budgetSummaryTextArea.setCaretPosition(0);
+        } else {
+            System.err.println("AnalysisPanel: budgetSummaryTextArea is null, cannot update.");
+        }
+
+        if (this.categoryBudgetChartTextArea != null) {
+            this.categoryBudgetChartTextArea.setText(generateCategoryBudgetText());
+            this.categoryBudgetChartTextArea.setCaretPosition(0);
+        } else {
+            System.err.println("AnalysisPanel: categoryBudgetChartTextArea is null, cannot update.");
+        }
+
+        if (this.specialDatesTextArea != null) {
+            // Update the border title for specialDatesDisplayPanel as well, as month might change
+            JPanel specialDatesDisplayPanel = (JPanel) this.specialDatesTextArea.getParent().getParent(); // JViewport -> JScrollPane -> JPanel
+            if (specialDatesDisplayPanel != null) {
+                 YearMonth nextMonth = YearMonth.now().plusMonths(1);
+                 String monthName = nextMonth.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault());
+                 specialDatesDisplayPanel.setBorder(BorderFactory.createTitledBorder("Upcoming Special Dates in " + monthName));
+            }
+            this.specialDatesTextArea.setText(generateSpecialDatesText());
+            this.specialDatesTextArea.setCaretPosition(0);
+        } else {
+            System.err.println("AnalysisPanel: specialDatesTextArea is null, cannot update.");
+        }
+        
+        // Ensure the panel itself re-renders if necessary, though text updates usually suffice.
+        budgetPanel.revalidate();
+        budgetPanel.repaint();
+        System.out.println("AnalysisPanel: Budget panel contents updated.");
+    }
+
+    /**
+     * Generates the summary text for the budget panel.
+     * @return String containing the budget summary.
+     */
+    private String generateBudgetSummaryText() {
+        LocalDate today = LocalDate.now();
+        YearMonth nextMonthYearMonth = YearMonth.from(today.plusMonths(1));
+        String monthName = nextMonthYearMonth.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault());
+        
+        StringBuilder summaryTextBuilder = new StringBuilder();
+        summaryTextBuilder.append("Budget Forecast for ").append(monthName).append(" ").append(nextMonthYearMonth.getYear()).append("\n\n");
+        
+        double avgIncome = calculateAverageIncome(6);
+        double avgExpense = calculateAverageExpense(6); // For context
+        
+        summaryTextBuilder.append("Based on your past 6 months of transactions (for context only):\n");
+        summaryTextBuilder.append(String.format("- Projected Average Income: %.2f\n", avgIncome));
+        summaryTextBuilder.append(String.format("- Projected Average Expenses: %.2f\n", avgExpense));
+        summaryTextBuilder.append(String.format("- Projected Average Savings (historical): %.2f\n\n", avgIncome - avgExpense));
+        
+        Settings currentSettings = settingsService.getSettings();
+        double baseBudget = 0.0;
+        String currency = "";
+
+        if (currentSettings != null) {
+            baseBudget = currentSettings.getMonthlyBudget();
+            currency = currentSettings.getDefaultCurrency() != null ? currentSettings.getDefaultCurrency() : "";
+            summaryTextBuilder.append(String.format("Base Monthly Budget (from Settings): %.2f %s\n", baseBudget, currency));
+        } else {
+            summaryTextBuilder.append("Base Monthly Budget: Not Set\n");
+        }
+        
+        Map<String, Double> categoryAdjustments = budgetAdjustmentService.getCategoryAdjustmentsForMonth(nextMonthYearMonth);
+        double totalAdjustments = 0;
+        
+        if (!categoryAdjustments.isEmpty()) {
+            summaryTextBuilder.append("\nSpecial Date Adjustments for Next Month:\n");
+            for (Map.Entry<String, Double> entry : categoryAdjustments.entrySet()) {
+                summaryTextBuilder.append(String.format("- %s: +%.2f %s\n", entry.getKey(), entry.getValue(), currency));
+                totalAdjustments += entry.getValue();
+            }
+            summaryTextBuilder.append(String.format("Total Increase from Special Dates: %.2f %s\n", totalAdjustments, currency));
+        } else {
+            summaryTextBuilder.append("\nNo specific budget adjustments from Special Dates for next month.\n");
+        }
+        
+        double finalProjectedExpenseBudget = baseBudget + totalAdjustments;
+        summaryTextBuilder.append(String.format("\nProjected Total Expense Budget for Next Month: %.2f %s\n", finalProjectedExpenseBudget, currency));
+
+        double projectedSavingsNextMonth = avgIncome - finalProjectedExpenseBudget;
+        summaryTextBuilder.append(String.format("Projected Savings for Next Month (Avg. Income - Projected Budget): %.2f %s\n\n", projectedSavingsNextMonth, currency));
+
+        // Add saving goals contributions
+        summaryTextBuilder.append("--- Projected Savings Contributions ---\n");
+        List<SavingGoal> activeSavingGoals = (currentSettings != null && currentSettings.getSavingGoals() != null) ? 
+                                            currentSettings.getSavingGoals().stream()
+                                                .filter(SavingGoal::isActive)
+                                                .filter(g -> !g.isCompleted())
+                                                .collect(java.util.stream.Collectors.toList()) 
+                                            : new ArrayList<>();
+        double totalProjectedSavingsContributions = 0.0;
+        if (!activeSavingGoals.isEmpty()){
+            for(SavingGoal goal : activeSavingGoals){
+                summaryTextBuilder.append(String.format("- Goal: %s, Monthly: %.2f %s\n", 
+                                                        goal.getName(), goal.getMonthlyContribution(), currency));
+                totalProjectedSavingsContributions += goal.getMonthlyContribution();
+            }
+            summaryTextBuilder.append(String.format("Total Projected Monthly Savings Contributions: %.2f %s\n", totalProjectedSavingsContributions, currency));
+        } else {
+            summaryTextBuilder.append("No active saving goals to contribute to for next month.\n");
+        }
+
+        return summaryTextBuilder.toString();
+    }
+
+    /**
+     * Generates the category budget text (text-based bar chart) for the budget panel.
+     * @return String containing the category budget allocation.
+     */
+    private String generateCategoryBudgetText() {
+        StringBuilder chartBuilder = new StringBuilder();
+        Settings currentSettings = settingsService.getSettings();
+        YearMonth nextMonthYearMonth = YearMonth.now().plusMonths(1);
+        List<String> expenseCategories = new ArrayList<>();
+        double baseBudget = 0.0;
+        String currency = "";
+
+        if (currentSettings != null) {
+            if (currentSettings.getExpenseCategories() != null) {
+                expenseCategories.addAll(currentSettings.getExpenseCategories());
+            }
+            baseBudget = currentSettings.getMonthlyBudget();
+            currency = currentSettings.getDefaultCurrency() != null ? currentSettings.getDefaultCurrency() : "";
+        }
+
+        Map<String, Double> categoryAdjustments = budgetAdjustmentService.getCategoryAdjustmentsForMonth(nextMonthYearMonth);
+        double totalAdjustments = 0;
+        for (double adj : categoryAdjustments.values()) {
+            totalAdjustments += adj;
+        }
+        double finalProjectedExpenseBudget = baseBudget + totalAdjustments;
+
+
+        if (currentSettings != null && !expenseCategories.isEmpty()) {
+            Map<String, Double> historicalDistPercentages = calculateCategoryDistribution(6); 
+            double totalBudgetForChartMax = 0; 
+
+            Map<String, Double> categoryTotalBudgets = new HashMap<>();
+            for (String category : expenseCategories) {
+                double historicalPercentage = historicalDistPercentages.getOrDefault(category, 0.0);
+                double baseAllocation = baseBudget * historicalPercentage;
+                double adjustment = categoryAdjustments.getOrDefault(category, 0.0);
+                double totalBudgetForCategory = baseAllocation + adjustment;
+                categoryTotalBudgets.put(category, totalBudgetForCategory);
+                if (totalBudgetForCategory > totalBudgetForChartMax) {
+                    totalBudgetForChartMax = totalBudgetForCategory;
+                }
+            }
+            
+            if (totalBudgetForChartMax == 0 && finalProjectedExpenseBudget > 0) { 
+                totalBudgetForChartMax = finalProjectedExpenseBudget; 
+            } else if (totalBudgetForChartMax == 0) {
+                totalBudgetForChartMax = 1; 
+            }
+
+            chartBuilder.append(String.format("Allocation based on historical spending (past 6m) & special date adjustments. Total Budget: %.2f %s\n\n", finalProjectedExpenseBudget, currency));
+            for (String category : expenseCategories) {
+                double totalBudgetForCategory = categoryTotalBudgets.getOrDefault(category, 0.0);
+                double adjustment = categoryAdjustments.getOrDefault(category, 0.0);
+
+                chartBuilder.append(String.format("%-20s: ", category)); 
+                
+                int barLength = (int) ((totalBudgetForCategory / totalBudgetForChartMax) * 30); 
+                if (totalBudgetForChartMax == 0) barLength = 0;
+
+                for (int i = 0; i < barLength; i++) {
+                    chartBuilder.append("*");
+                }
+                chartBuilder.append(String.format(" %.2f %s", totalBudgetForCategory, currency));
+                
+                if (adjustment > 0) {
+                    chartBuilder.append(String.format(" (+%.2f from special dates)", adjustment));
+                } else if (adjustment < 0) {
+                     chartBuilder.append(String.format(" (%.2f from special dates)", adjustment));
+                }
+                chartBuilder.append("\n");
+            }
+        } else {
+            chartBuilder.append("No expense categories defined in settings to display budget allocation.\n");
+        }
+        return chartBuilder.toString();
+    }
+
+    /**
+     * Generates the special dates information text for the budget panel.
+     * @return String containing upcoming special dates information.
+     */
+    private String generateSpecialDatesText() {
+        StringBuilder specialDatesInfo = new StringBuilder();
+        Settings currentSettings = settingsService.getSettings();
+        YearMonth nextMonthYearMonth = YearMonth.now().plusMonths(1);
+        String monthName = nextMonthYearMonth.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault());
+        String currency = currentSettings != null && currentSettings.getDefaultCurrency() != null ? currentSettings.getDefaultCurrency() : "";
+
+        if (currentSettings != null) {
+            List<SpecialDate> allSpecialDates = currentSettings.getSpecialDates();
+            boolean foundForNextMonth = false;
+            if (allSpecialDates != null) {
+                for (SpecialDate sd : allSpecialDates) {
+                    LocalDate occurrence = sd.getNextOccurrence(nextMonthYearMonth.atDay(1));
+                    if (occurrence != null && YearMonth.from(occurrence).equals(nextMonthYearMonth)) {
+                        if (!foundForNextMonth) {
+                            specialDatesInfo.append("The following special dates fall in ").append(monthName).append(":\n");
+                            foundForNextMonth = true;
+                        }
+                        specialDatesInfo.append(String.format("- %s (%s): %s. Affects '%s' by +%.2f %s.\n",
+                                sd.getName(),
+                                occurrence.format(DateTimeFormatter.ISO_LOCAL_DATE),
+                                sd.getDescription() != null ? sd.getDescription() : "No description",
+                                sd.getAffectedCategory(),
+                                sd.getAmountIncrease(),
+                                currency
+                        ));
+                    }
+                }
+            }
+            if (!foundForNextMonth) {
+                specialDatesInfo.append("No user-defined special dates found for ").append(monthName).append(".\n");
+            }
+        } else {
+             specialDatesInfo.append("Settings not available to load special dates.\n");
+        }
+        specialDatesInfo.append("\nTip: You can add/manage special dates in the Settings panel.");
+        return specialDatesInfo.toString();
     }
 }

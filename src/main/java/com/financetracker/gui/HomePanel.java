@@ -218,8 +218,12 @@ public class HomePanel extends JPanel {
                 JPanel goalEntryPanel = new JPanel(new BorderLayout(10, 2)); // Gap between components
                 goalEntryPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
-                JLabel goalNameLabel = new JLabel(goal.getName());
-                goalNameLabel.setFont(new Font("Arial", Font.BOLD, 14));
+                String goalDisplayName = goal.getName();
+                if (goalDisplayName == null || goalDisplayName.trim().isEmpty()) {
+                    goalDisplayName = "(Unnamed Goal)"; // Placeholder for unnamed goals
+                }
+                JLabel goalNameLabel = new JLabel(goalDisplayName); 
+                goalNameLabel.setFont(new Font("SimSun", Font.BOLD, 14)); // Try SimSun font for Chinese characters
                 goalEntryPanel.add(goalNameLabel, BorderLayout.NORTH);
 
                 JProgressBar progressBar = new JProgressBar(0, 100);
