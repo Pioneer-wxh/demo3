@@ -49,7 +49,7 @@ public class TransactionPanel extends JPanel {
      */
     public TransactionPanel(MainFrame mainFrame) {
         this.mainFrame = mainFrame;
-        this.transactionService = new TransactionService();
+        this.transactionService = mainFrame.getTransactionService();
         initComponents();
         loadTransactions();
     }

@@ -9,6 +9,7 @@ import java.awt.Insets;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.Calendar;
 import java.util.Date;
 import java.util.List;
@@ -394,12 +395,12 @@ public class SettingsPanel extends JPanel {
 
         // Target Amount
         formFieldsGbc.gridy = y; formFieldsPanel.add(new JLabel("Target Amount:"), formFieldsGbc);
-        sgTargetAmountSpinner = new JSpinner(new SpinnerNumberModel(1000.0, 0.0, Double.MAX_VALUE, 100.0));
+        sgTargetAmountSpinner = new JSpinner(new SpinnerNumberModel(1000.0, 0.0, Double.MAX_VALUE, 100.0)); // Restore default
         fieldConstraints.gridy = y++; formFieldsPanel.add(sgTargetAmountSpinner, fieldConstraints);
 
         // Monthly Contribution
         formFieldsGbc.gridy = y; formFieldsPanel.add(new JLabel("Monthly Contribution:"), formFieldsGbc);
-        sgMonthlyContributionSpinner = new JSpinner(new SpinnerNumberModel(50.0, 0.0, Double.MAX_VALUE, 10.0));
+        sgMonthlyContributionSpinner = new JSpinner(new SpinnerNumberModel(50.0, 0.0, Double.MAX_VALUE, 10.0)); // Restore default
         fieldConstraints.gridy = y++; formFieldsPanel.add(sgMonthlyContributionSpinner, fieldConstraints);
 
         // Start Date
@@ -410,7 +411,7 @@ public class SettingsPanel extends JPanel {
 
         // Target Date (Optional)
         formFieldsGbc.gridy = y; formFieldsPanel.add(new JLabel("Target Date (Optional):"), formFieldsGbc);
-        sgTargetDateSpinner = new JSpinner(new SpinnerDateModel(Date.from(LocalDate.now().plusYears(1).atStartOfDay(ZoneId.systemDefault()).toInstant()), null, null, Calendar.DAY_OF_MONTH));
+        sgTargetDateSpinner = new JSpinner(new SpinnerDateModel(Date.from(LocalDate.now().plusYears(1).atStartOfDay(ZoneId.systemDefault()).toInstant()), null, null, Calendar.DAY_OF_MONTH)); // Restore default
         sgTargetDateSpinner.setEditor(new JSpinner.DateEditor(sgTargetDateSpinner, "yyyy-MM-dd"));
         fieldConstraints.gridy = y++; formFieldsPanel.add(sgTargetDateSpinner, fieldConstraints);
 
@@ -576,16 +577,6 @@ public class SettingsPanel extends JPanel {
         // For simplicity, editing means deleting the old one and adding a new one with current form data
         // This is not ideal for preserving ID or complex recurrence settings not exposed in this simple form.
         // A more robust edit would fetch the full SpecialDate object and allow modifying its properties.
-        JOptionPane.showMessageDialog(this, 
-            "Editing a special date: Modify the details in the form and click \"Add Special Date\".\n" +
-            "You may need to manually delete the old entry if the name/date changes significantly.\n" +
-            "(A more direct edit feature will be improved later)", 
-            "Edit Information", 
-            JOptionPane.INFORMATION_MESSAGE);
-
-        // A proper edit would require identifying the SpecialDate object (e.g., by ID if stored in table model)
-        // and then calling specialDateService.updateSpecialDate(updatedSpecialDateObject);
-        // For now, prompt user to re-add after deleting or rely on Add to overwrite if name/date matches (if logic supports that)
     }
     
     /**
@@ -863,111 +854,220 @@ public class SettingsPanel extends JPanel {
     }
 
     public void loadSavingGoals() {
-        if (savingGoalsTableModel == null || mainFrame == null || mainFrame.getSettings() == null) {
-            if (savingGoalsTableModel != null) savingGoalsTableModel.setRowCount(0); // Clear if possible
-            return;
-        }
-        savingGoalsTableModel.setRowCount(0); // Clear existing rows
-
-        List<SavingGoal> goals = mainFrame.getSettings().getSavingGoals();
-        if (goals != null) {
-            for (SavingGoal goal : goals) {
-                Object[] rowData = {
+        if (savingGoalsTableModel == null) return; // Guard against null if called too early
+        savingGoalsTableModel.setRowCount(0);
+        Settings settings = settingsService.getSettings();
+        if (settings != null && settings.getSavingGoals() != null) {
+            for (SavingGoal goal : settings.getSavingGoals()) {
+                savingGoalsTableModel.addRow(new Object[]{
                     goal.getName(),
-                    String.format("%.2f", goal.getTargetAmount()),
-                    String.format("%.2f", goal.getCurrentAmount()),
-                    String.format("%.2f", goal.getMonthlyContribution()),
-                    goal.getStartDate() != null ? goal.getStartDate().format(DateTimeFormatter.ISO_LOCAL_DATE) : "N/A",
-                    goal.getTargetDate() != null ? goal.getTargetDate().format(DateTimeFormatter.ISO_LOCAL_DATE) : "N/A",
-                    goal.isActive()
-                };
-                savingGoalsTableModel.addRow(rowData);
+                    goal.getTargetAmount(),
+                    goal.getCurrentAmount(),
+                    goal.getMonthlyContribution(),
+                    goal.getStartDate() != null ? goal.getStartDate().format(DateTimeFormatter.ISO_DATE) : "",
+                    goal.getTargetDate() != null ? goal.getTargetDate().format(DateTimeFormatter.ISO_DATE) : "N/A",
+                    goal.isActive() ? "Yes" : "No",
+                    String.format("%.2f%%", goal.getProgressPercentage())
+                });
             }
         }
     }
 
-    private void addSavingGoal() {
-        String name = sgNameField.getText().trim();
-        if (name.isEmpty()) {
-            JOptionPane.showMessageDialog(this, "Goal name cannot be empty.", "Input Error", JOptionPane.ERROR_MESSAGE);
-            sgNameField.requestFocus();
-            return;
-        }
+    private SavingGoal prepareSavingGoalFromInputs(SavingGoal existingGoal) {
+        String name = sgNameField.getText();
+        String description = sgDescriptionField.getText();
 
-        String description = sgDescriptionField.getText().trim();
+        // Restore direct value fetching
         double targetAmount = ((Number) sgTargetAmountSpinner.getValue()).doubleValue();
-        double monthlyContribution = ((Number) sgMonthlyContributionSpinner.getValue()).doubleValue();
+        double monthlyContributionRaw = ((Number) sgMonthlyContributionSpinner.getValue()).doubleValue();
         
-        Date startDateSelected = (Date) sgStartDateSpinner.getValue();
-        LocalDate startDate = startDateSelected.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-
-        LocalDate targetDate = null;
-        try {
-            // Target date spinner might not have a null option by default in JSpinner<Date>
-            // We need to handle this gracefully if user means "no target date"
-            // For now, we take what is in the spinner. If it needs to be optional,
-            // a JCheckBox to enable/disable or a clear button for the date would be better.
-            Date targetDateSelected = (Date) sgTargetDateSpinner.getValue();
-            if (targetDateSelected != null) { // Check if a date is actually set
-                targetDate = targetDateSelected.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-            }
-        } catch (Exception e) {
-            // Could be null or invalid date if spinner was modified to allow it
-            // Log this if necessary, for now, null targetDate is acceptable
-            System.err.println("Could not parse target date: " + e.getMessage());
-        }
-        
+        Date startDateRaw = (Date) sgStartDateSpinner.getValue();
+        Date targetDateRaw = (Date) sgTargetDateSpinner.getValue(); 
         boolean isActive = sgIsActiveCheckBox.isSelected();
 
+        // --- Validations ---
+        if (name.trim().isEmpty()) {
+            JOptionPane.showMessageDialog(this, "Saving goal name cannot be empty.", "Input Error", JOptionPane.ERROR_MESSAGE);
+            return null;
+        }
+        // Target amount value validation
         if (targetAmount <= 0) {
             JOptionPane.showMessageDialog(this, "Target amount must be greater than zero.", "Input Error", JOptionPane.ERROR_MESSAGE);
-            sgTargetAmountSpinner.requestFocus();
-            return;
+            return null;
         }
-        if (monthlyContribution < 0) { // Allow 0 for manual saving goals not auto-contributed
-            JOptionPane.showMessageDialog(this, "Monthly contribution cannot be negative.", "Input Error", JOptionPane.ERROR_MESSAGE);
-            sgMonthlyContributionSpinner.requestFocus();
-            return;
+        if (startDateRaw == null) {
+            JOptionPane.showMessageDialog(this, "Start date cannot be empty.", "Input Error", JOptionPane.ERROR_MESSAGE);
+            return null;
         }
-        if (targetDate != null && targetDate.isBefore(startDate)) {
-            JOptionPane.showMessageDialog(this, "Target date cannot be before start date.", "Input Error", JOptionPane.ERROR_MESSAGE);
-            sgTargetDateSpinner.requestFocus();
-            return;
-        }
-
-        SavingGoal newGoal = new SavingGoal();
-        newGoal.setId(java.util.UUID.randomUUID().toString()); // Ensure a new ID
-        newGoal.setName(name);
-        newGoal.setDescription(description);
-        newGoal.setTargetAmount(targetAmount);
-        newGoal.setCurrentAmount(0); // New goals start with 0 current amount
-        newGoal.setMonthlyContribution(monthlyContribution);
-        newGoal.setStartDate(startDate);
-        newGoal.setTargetDate(targetDate);
-        newGoal.setActive(isActive);
-
-        Settings settings = mainFrame.getSettings();
-        settings.addSavingGoal(newGoal);
+        LocalDate startDate = startDateRaw.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+        LocalDate targetDate = null; 
         
-        if (settingsService.saveSettings()) {
-            JOptionPane.showMessageDialog(this, "Saving goal added successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
-            loadSavingGoals(); // Refresh the table
-            clearSavingGoalForm(); // Clear the form
-            mainFrame.refreshCategoryLists(); // Also refresh other panels if needed
-        } else {
-            JOptionPane.showMessageDialog(this, "Failed to save the new saving goal.", "Error", JOptionPane.ERROR_MESSAGE);
-            // Rollback adding to settings if save fails? Or rely on user to try save again later.
-            // For simplicity, currently it remains in the settings object in memory.
+        if (targetDateRaw != null) {
+            LocalDate tempTargetDate = targetDateRaw.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+            if (tempTargetDate.isAfter(startDate)) {
+                targetDate = tempTargetDate; 
+            }
+            // No explicit "else" with JOptionPane here for invalid date, let the logic flow.
+        }
+
+        double finalMonthlyContribution = 0;
+        LocalDate finalTargetDate = null;
+        
+        // Restore the logic from the first successful fix for calculation bug
+        LocalDate initialTargetDateDefault = LocalDate.now().plusYears(1);
+        boolean targetDateIsEffectivelyInitialDefault = false;
+        if (targetDateRaw != null) {
+            LocalDate currentTargetDateInSpinner = targetDateRaw.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+            if (currentTargetDateInSpinner.isEqual(initialTargetDateDefault)) {
+                 targetDateIsEffectivelyInitialDefault = true;
+            }
+        }
+        
+        boolean monthlyContributionEffectivelyProvided = monthlyContributionRaw > 0.001; 
+        boolean userHasExplicitlySetTargetDate = (targetDate != null && !targetDateIsEffectivelyInitialDefault);
+
+        if (userHasExplicitlySetTargetDate) {
+            // Case A: User explicitly set the target date. Calculate Monthly Contribution.
+            finalTargetDate = targetDate;
+            long numberOfMonths = ChronoUnit.MONTHS.between(startDate, finalTargetDate);
+
+            if (numberOfMonths == 0 && startDate.isBefore(finalTargetDate)) { // Less than a full month but valid period
+                numberOfMonths = 1;
+            }
+            if (numberOfMonths <= 0) {
+                JOptionPane.showMessageDialog(this, "The period between start and target date must result in at least one contribution month.", "Input Error", JOptionPane.ERROR_MESSAGE);
+                return null;
+            }
+            if (targetAmount <= 0) {
+                 JOptionPane.showMessageDialog(this, "Target amount must be greater than zero to calculate monthly contribution.", "Input Error", JOptionPane.ERROR_MESSAGE);
+                 return null;
+            }
+            finalMonthlyContribution = targetAmount / numberOfMonths;
+
+            // Update UI: Set the calculated monthly contribution
+            sgMonthlyContributionSpinner.setValue(finalMonthlyContribution);
+            // Ensure target date spinner reflects the date used for calculation (it should already, but good for consistency)
+            if (finalTargetDate != null) { // finalTargetDate should be non-null here
+                sgTargetDateSpinner.setValue(Date.from(finalTargetDate.atStartOfDay(ZoneId.systemDefault()).toInstant()));
+            }
+
+            // If monthly contribution was also effectively provided by user (e.g., they typed it before changing target date),
+            // check for discrepancy with the newly calculated one.
+            if (monthlyContributionEffectivelyProvided) {
+                double tolerance = 0.01; // Tolerance for floating point comparison (e.g., 1 cent)
+                if (Math.abs(finalMonthlyContribution - monthlyContributionRaw) > tolerance) { 
+                     // Ask user if they want to use the new calculated monthly contribution or stick to what they might have typed previously.
+                     // For simplicity in this version, we will prioritize the calculation based on the user-set Target Date.
+                     // The sgMonthlyContributionSpinner is already updated with finalMonthlyContribution.
+                     // A more complex dialog could offer choices, but here we assume user changing TargetDate implies they want contribution to adjust.
+                }
+            }
+
+        } else if (monthlyContributionEffectivelyProvided && !userHasExplicitlySetTargetDate) {
+            // Case B: Monthly contribution is provided, and target date was NOT explicitly set by user (it's default or invalid).
+            // Calculate Target Date (this is the original bug fix you requested).
+            finalMonthlyContribution = monthlyContributionRaw;
+            if (finalMonthlyContribution <= 0) { 
+                 JOptionPane.showMessageDialog(this, "Monthly contribution must be a positive value to calculate target date.", "Input Error", JOptionPane.ERROR_MESSAGE);
+                 return null;
+            }
+            if (targetAmount <= 0) {
+                 JOptionPane.showMessageDialog(this, "Target amount must be greater than zero to calculate target date.", "Input Error", JOptionPane.ERROR_MESSAGE);
+                 return null;
+            }
+            long numberOfMonths = (long) Math.ceil(targetAmount / finalMonthlyContribution);
+            if (numberOfMonths <= 0) numberOfMonths = 1; 
+            finalTargetDate = startDate.plusMonths(numberOfMonths);
+            
+            sgTargetDateSpinner.setValue(Date.from(finalTargetDate.atStartOfDay(ZoneId.systemDefault()).toInstant()));
+            sgMonthlyContributionSpinner.setValue(finalMonthlyContribution); // Ensure it reflects the value used
+
+        } else if (monthlyContributionEffectivelyProvided && userHasExplicitlySetTargetDate) {
+            // Case C: Both were effectively provided (e.g., user set target date, calculation set monthly, or user explicitly set both).
+            // This now acts as a final check, primarily for when user might have set both fields manually and there's a conflict.
+            // Or, if the logic from Case A (after user sets target date) leads here because monthly contribution was also present.
+            // We will use the values that are currently in `finalMonthlyContribution` and `finalTargetDate` if they have been set by prior blocks,
+            // otherwise, fall back to raw inputs if this is the first block hit.
+
+            // If this block is reached directly (e.g., user typed both), initialize from raw inputs.
+            if (finalTargetDate == null) finalTargetDate = targetDate; // From user input or default
+            if (finalMonthlyContribution == 0 && monthlyContributionRaw > 0.001) finalMonthlyContribution = monthlyContributionRaw; // from user input
+            
+            // If still one is missing after trying to populate from prior blocks or raw, it's an issue.
+            if (finalTargetDate == null || finalMonthlyContribution <= 0.001) {
+                 JOptionPane.showMessageDialog(this, "Both target date and monthly contribution need to be effectively set to check for discrepancies or save.", "Input Error", JOptionPane.ERROR_MESSAGE);
+                 return null;
+            }
+
+            long monthsBetween = ChronoUnit.MONTHS.between(startDate, finalTargetDate);
+            if (monthsBetween <= 0) {
+                JOptionPane.showMessageDialog(this, "Target date must be after start date for a valid calculation.", "Input Error", JOptionPane.ERROR_MESSAGE);
+                return null;
+            }
+            if (targetAmount <=0) { 
+                JOptionPane.showMessageDialog(this, "Target amount must be greater than zero.", "Input Error", JOptionPane.ERROR_MESSAGE);
+                return null;
+            }
+            double expectedContribution = targetAmount / monthsBetween;
+            double tolerance = 0.01; 
+
+            if (Math.abs(expectedContribution - finalMonthlyContribution) > tolerance) {
+                 int response = JOptionPane.showConfirmDialog(this,
+                         String.format("Warning: Based on your inputs, the values may be inconsistent.\nTarget Amount: %.2f\nStart Date: %s\nTarget Date: %s (implies approx. %.2f monthly)\nMonthly Contribution: %.2f (implies reaching target in approx. %d months)\n\nDo you want to proceed with your entered/currently displayed values (Monthly: %.2f, Target Date: %s)?",
+                                 targetAmount, startDate.format(DateTimeFormatter.ISO_LOCAL_DATE), 
+                                 finalTargetDate.format(DateTimeFormatter.ISO_LOCAL_DATE), 
+                                 expectedContribution, 
+                                 finalMonthlyContribution, 
+                                 (long)Math.ceil(targetAmount/finalMonthlyContribution),
+                                 finalMonthlyContribution, 
+                                 finalTargetDate.format(DateTimeFormatter.ISO_LOCAL_DATE)),
+                         "Potential Discrepancy", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+                 if (response == JOptionPane.NO_OPTION) {
+                     return null; 
+                 }
+             }
+            // If proceeding, ensure UI reflects values used for the final SavingGoal object
+            sgMonthlyContributionSpinner.setValue(finalMonthlyContribution);
+            sgTargetDateSpinner.setValue(Date.from(finalTargetDate.atStartOfDay(ZoneId.systemDefault()).toInstant()));
+
+        } else { 
+            // Case D: Insufficient information to proceed with any calculation.
+            // This means neither target date was explicitly set nor was a monthly contribution provided.
+            JOptionPane.showMessageDialog(this, "Please provide either a positive Monthly Contribution or an explicit Target Date (after start date).", "Input Error", JOptionPane.ERROR_MESSAGE);
+            return null;
+        }
+
+        String id = (existingGoal != null) ? existingGoal.getId() : null;
+        double currentAmount = (existingGoal != null) ? existingGoal.getCurrentAmount() : 0.0;
+        String associatedAccount = (existingGoal != null) ? existingGoal.getAssociatedAccount() : null;
+
+        if (finalMonthlyContribution < 0) finalMonthlyContribution = 0; // Should not happen if logic above is correct
+
+        return new SavingGoal(id, name, description, targetAmount, currentAmount, finalMonthlyContribution, startDate, finalTargetDate, isActive, associatedAccount);
+    }
+
+    private void addSavingGoal() {
+        SavingGoal newGoal = prepareSavingGoalFromInputs(null);
+        if (newGoal != null) {
+            Settings settings = settingsService.getSettings();
+            settings.addSavingGoal(newGoal);
+            if (settingsService.saveSettings()) {
+                loadSavingGoals(); // Refresh table
+                clearSavingGoalForm();
+                JOptionPane.showMessageDialog(this, "Saving goal added successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+            } else {
+                JOptionPane.showMessageDialog(this, "Failed to save new saving goal.", "Error", JOptionPane.ERROR_MESSAGE);
+            }
         }
     }
 
     private void clearSavingGoalForm() {
         sgNameField.setText("");
         sgDescriptionField.setText("");
-        sgTargetAmountSpinner.setValue(1000.0);
-        sgMonthlyContributionSpinner.setValue(50.0);
-        sgStartDateSpinner.setValue(new Date());
-        sgTargetDateSpinner.setValue(Date.from(LocalDate.now().plusYears(1).atStartOfDay(ZoneId.systemDefault()).toInstant()));
+        sgTargetAmountSpinner.setValue(1000.0); // Restore default
+        sgMonthlyContributionSpinner.setValue(50.0); // Restore default
+        sgStartDateSpinner.setValue(new Date()); 
+        sgTargetDateSpinner.setValue(Date.from(LocalDate.now().plusYears(1).atStartOfDay(ZoneId.systemDefault()).toInstant())); // Restore default
         sgIsActiveCheckBox.setSelected(true);
         
         currentEditingSavingGoal = null;
@@ -1005,9 +1105,7 @@ public class SettingsPanel extends JPanel {
             if (goalToEdit.getTargetDate() != null) {
                 sgTargetDateSpinner.setValue(Date.from(goalToEdit.getTargetDate().atStartOfDay(ZoneId.systemDefault()).toInstant()));
             } else {
-                // Set to a default or clear if spinner supports null (JSpinner<Date> typically doesn't directly support null text)
-                // For now, setting a default far future date or current date as placeholder if null
-                sgTargetDateSpinner.setValue(new Date()); 
+                sgTargetDateSpinner.setValue(Date.from(LocalDate.now().plusYears(1).atStartOfDay(ZoneId.systemDefault()).toInstant())); // Restore default if null
             }
             sgIsActiveCheckBox.setSelected(goalToEdit.isActive());
             
@@ -1022,48 +1120,24 @@ public class SettingsPanel extends JPanel {
 
     private void saveEditedSavingGoal() {
         if (currentEditingSavingGoal == null) {
-            JOptionPane.showMessageDialog(this, "No goal selected for editing.", "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "No saving goal selected for editing.", "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
-
-        // Validate and retrieve form data (similar to addSavingGoal, but update currentEditingSavingGoal)
-        String description = sgDescriptionField.getText().trim();
-        double targetAmount = ((Number) sgTargetAmountSpinner.getValue()).doubleValue();
-        double monthlyContribution = ((Number) sgMonthlyContributionSpinner.getValue()).doubleValue();
-        Date startDateSelected = (Date) sgStartDateSpinner.getValue();
-        LocalDate startDate = startDateSelected.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
-        LocalDate targetDate = null;
-        try {
-            Date targetDateSelected = (Date) sgTargetDateSpinner.getValue();
-            if (targetDateSelected != null) {
-                targetDate = targetDateSelected.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
+        SavingGoal updatedGoal = prepareSavingGoalFromInputs(currentEditingSavingGoal);
+        if (updatedGoal != null) {
+            Settings settings = settingsService.getSettings();
+            settings.updateSavingGoal(updatedGoal); // Assumes updateSavingGoal handles finding by ID
+            if (settingsService.saveSettings()) {
+                loadSavingGoals();
+                clearSavingGoalForm();
+                currentEditingSavingGoal = null; // Reset editing state
+                addGoalButton.setText("Add New Goal");
+                addGoalButton.setEnabled(true);
+                saveGoalButton.setEnabled(false);
+                JOptionPane.showMessageDialog(this, "Saving goal updated successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+            } else {
+                JOptionPane.showMessageDialog(this, "Failed to update saving goal.", "Error", JOptionPane.ERROR_MESSAGE);
             }
-        } catch (Exception e) {System.err.println("Could not parse target date for edit: " + e.getMessage());}
-        boolean isActive = sgIsActiveCheckBox.isSelected();
-
-        if (targetAmount <= 0) { /* ... validation ... */ return; }
-        if (monthlyContribution < 0) { /* ... validation ... */ return; }
-        if (targetDate != null && targetDate.isBefore(startDate)) { /* ... validation ... */ return; }
-
-        // Update the currentEditingSavingGoal object
-        // Name (ID) is not changed here, as it was used for lookup and set to non-editable.
-        // If name change is allowed, then removeSavingGoal(oldId) and addSavingGoal(newGoalWithNewName) might be needed.
-        currentEditingSavingGoal.setDescription(description);
-        currentEditingSavingGoal.setTargetAmount(targetAmount);
-        currentEditingSavingGoal.setMonthlyContribution(monthlyContribution);
-        currentEditingSavingGoal.setStartDate(startDate);
-        currentEditingSavingGoal.setTargetDate(targetDate);
-        currentEditingSavingGoal.setActive(isActive);
-        // CurrentAmount is not edited here, it's managed by transactions.
-
-        if (settingsService.saveSettings()) {
-            JOptionPane.showMessageDialog(this, "Saving goal updated successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
-            loadSavingGoals();
-            clearSavingGoalForm(); // This will also reset button states and currentEditingSavingGoal
-        } else {
-            JOptionPane.showMessageDialog(this, "Failed to save updated saving goal.", "Error", JOptionPane.ERROR_MESSAGE);
-            // Potentially rollback changes to currentEditingSavingGoal in memory if save fails,
-            // or rely on user to try saving again / reload settings.
         }
     }
 

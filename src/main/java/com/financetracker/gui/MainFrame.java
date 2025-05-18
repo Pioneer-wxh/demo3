@@ -51,7 +51,7 @@ public class MainFrame extends JFrame {
         settings = settingsService.getSettings();
         specialDateService = new SpecialDateService(settingsService);
         budgetAdjustmentService = new BudgetAdjustmentService(settingsService);
-        transactionService = new TransactionService();
+        transactionService = new TransactionService(settings);
 
         // Set up the frame
         setTitle("个人财务跟踪器");

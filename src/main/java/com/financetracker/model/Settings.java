@@ -41,15 +41,18 @@ public class Settings implements Serializable {
         this.dateFormat = "yyyy-MM-dd";
         this.darkModeEnabled = false;
         
-        // Initialize default expense categories
+        // Initialize default expense categories with Chinese names
         this.expenseCategories = new ArrayList<>(Arrays.asList(
-            "Food", "Shopping", "Transportation", "Housing", "Entertainment", 
-            "Healthcare", "Education", "Communication", "Utilities", "Clothing", 
-            "Savings", "Others" // Added Savings here as an expense category
+            "娱乐", "宠物", "家居", "生活费用", "通讯", 
+            "教育", "餐饮", "健康", "医疗", "交通", 
+            "购物", "食品", "工作", "保险"
+            // "Savings" was previously here, decide if it should remain or be managed differently
+            // "Others" is also a common default
         ));
-        // Initialize default income categories
+        // Initialize default income categories with Chinese names
         this.incomeCategories = new ArrayList<>(Arrays.asList(
-            "Salary", "Bonus", "Investment", "Gift", "Freelance/Part-time", "Other Income"
+            "收入", "兼职", "投资"
+            // Consider adding "Salary", "Bonus", "Gift", "Other Income" in Chinese if applicable
         ));
         
         this.dataStoragePath = "data/";
@@ -213,14 +216,14 @@ public class Settings implements Serializable {
         this.defaultCurrency = "CNY";
         this.dateFormat = "yyyy-MM-dd";
         this.darkModeEnabled = false;
-        // Reset to new default categories
+        // Reset to new default Chinese categories
         this.expenseCategories = new ArrayList<>(Arrays.asList(
-            "Food", "Shopping", "Transportation", "Housing", "Entertainment", 
-            "Healthcare", "Education", "Communication", "Utilities", "Clothing", 
-            "Savings", "Others"
+            "娱乐", "宠物", "家居", "生活费用", "通讯", 
+            "教育", "餐饮", "健康", "医疗", "交通", 
+            "购物", "食品", "工作", "保险"
         ));
         this.incomeCategories = new ArrayList<>(Arrays.asList(
-            "Salary", "Bonus", "Investment", "Gift", "Freelance/Part-time", "Other Income"
+            "收入", "兼职", "投资"
         ));
         this.dataStoragePath = "data/";
         this.autoBackupEnabled = true;

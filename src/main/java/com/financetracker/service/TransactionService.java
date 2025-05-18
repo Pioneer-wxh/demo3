@@ -30,16 +30,20 @@ import com.financetracker.model.Transaction;
 public class TransactionService {
     
     private static final Logger LOGGER = Logger.getLogger(TransactionService.class.getName());
+    // private static final Set<String> INCOME_CATEGORIES_FROM_PYTHON = Set.of("收入", "兼职", "投资"); // 已移除
     
     // 不再需要硬编码的完整路径
     // private static final String CSV_FILE_PATH = "E:\\code\\Java\\software_lab\\data\\transactions.csv";
     private final TransactionCsvExporter csvExporter;
+    private final Settings settings; // 新增字段存储Settings引用
     
     /**
      * Constructor for TransactionService.
+     * @param settings The application settings.
      */
-    public TransactionService() {
+    public TransactionService(Settings settings) { // 修改构造函数
         this.csvExporter = new TransactionCsvExporter();
+        this.settings = settings; // 存储Settings引用
         
         // 确保数据目录存在 (不再需要在此处创建，由各服务在使用PathUtil获取路径后自行处理)
         // try {
@@ -191,6 +195,27 @@ public class TransactionService {
      */
     public boolean addTransaction(Transaction transaction) {
         List<Transaction> transactions = getAllTransactions();
+
+        // 根据类别设置 IsExpense
+        if (transaction.getCategory() != null && this.settings.getIncomeCategories().contains(transaction.getCategory())) {
+            transaction.setExpense(false);
+        } else {
+            // 如果不是明确的收入类别，可以保留原有的isExpense值，或者调用autoDetectIsExpense
+            // 为简单起见，如果UI层已经设置了isExpense，我们这里可以信任它，除非它是已知收入类别
+            // 如果需要更复杂的逻辑，例如总是重新检测，可以调用：
+            // transaction.setExpense(autoDetectIsExpense(transaction.getDescription(), transaction.getAmount(), transaction.getCategory()));
+            // 但请注意，这可能覆盖用户在UI上明确的选择。当前保留：如果不是已知收入，则信任传入的isExpense。
+            // 如果传入的 transaction 本身没有正确设置 isExpense，且不是已知收入类别，则默认为支出 (true)
+             if (transaction.getCategory() != null && !this.settings.getIncomeCategories().contains(transaction.getCategory())) {
+                // 如果不是已知收入，且UI没有明确设置isExpense为false，可以考虑默认为true
+                // 不过，Transaction对象本身在创建时应有默认的isExpense处理
+                // 此处仅确保收入类别被正确设为false。
+                // 若要强制非收入类别为true，则： transaction.setExpense(true);
+                // 但这可能不是期望行为，因为一个非特定收入的条目也可能被用户手动设为收入。
+                // 最好的做法是UI确保isExpense的初始值，这里只覆盖已知收入类别。
+            }
+        }
+
         transactions.add(transaction);
         
         // 保存到CSV文件
@@ -209,6 +234,14 @@ public class TransactionService {
         // 查找要更新的交易
         for (int i = 0; i < transactions.size(); i++) {
             if (transactions.get(i).getId().equals(transaction.getId())) {
+                // 根据类别设置 IsExpense
+                if (transaction.getCategory() != null && this.settings.getIncomeCategories().contains(transaction.getCategory())) {
+                    transaction.setExpense(false);
+                } else {
+                    // 与addTransaction中类似的考虑
+                    // 此处也仅确保收入类别被正确设为false，其他情况信任传入的transaction对象的isExpense值。
+                    // 如果需要对非收入类别强制设为true，则：transaction.setExpense(true);
+                }
                 transactions.set(i, transaction);
                 
                 // 保存到CSV文件
@@ -461,6 +494,13 @@ public class TransactionService {
                     // 确保金额为正数
                     amount = Math.abs(amount);
                     
+                    // ---- 新增最终检查 ----
+                    // 如果类别在我们定义的中文收入类别列表中，则确保 transactionIsExpense 为 false
+                    if (category != null && this.settings.getIncomeCategories().contains(category)) {
+                        transactionIsExpense = false;
+                    }
+                    // ---- 结束新增 ----
+                    
                     // 创建新的交易记录
                     Transaction transaction = new Transaction();
                     transaction.setId(UUID.randomUUID().toString());
@@ -675,7 +715,12 @@ public class TransactionService {
      * @return 是否为支出
      */
     private boolean autoDetectIsExpense(String description, double amount, String category) {
-        // 根据类别判断
+        // 首先，检查是否为已知的收入类别 (来自 Settings)
+        if (category != null && !category.isEmpty() && this.settings.getIncomeCategories().contains(category)) {
+            return false; // 明确是收入
+        }
+
+        // 根据类别判断 (此部分为原有逻辑，现在作为已知收入类别检查后的备用)
         if (category != null && !category.isEmpty()) {
             // 使用英文类别名进行判断
             if (category.equalsIgnoreCase("Salary") || category.equalsIgnoreCase("Bonus") || 
