@@ -34,6 +34,7 @@ import javax.swing.JSplitPane;
 import javax.swing.JTabbedPane;
 import javax.swing.JTextArea;
 import javax.swing.JTextField;
+import javax.swing.SwingUtilities;
 import javax.swing.SwingWorker;
 import javax.swing.UIManager;
 
@@ -44,6 +45,7 @@ import com.financetracker.model.Settings;
 import com.financetracker.model.SpecialDate;
 import com.financetracker.model.Transaction;
 import com.financetracker.service.BudgetAdjustmentService;
+import com.financetracker.service.FinancialCycleService;
 import com.financetracker.service.SettingsService;
 import com.financetracker.service.SpecialDateService;
 import com.financetracker.service.TransactionService;
@@ -53,12 +55,13 @@ import com.financetracker.service.TransactionService;
  */
 public class AnalysisPanel extends JPanel {
     
-    private MainFrame mainFrame;
     private TransactionService transactionService;
     private AiAssistantService aiAssistantService;
     private SpecialDateService specialDateService;
     private BudgetAdjustmentService budgetAdjustmentService;
     private SettingsService settingsService;
+    private FinancialCycleService financialCycleService;
+    private ActionListener panelNavigationListener;
     
     private JPanel currentMonthPanel;
     private JPanel aiAssistantPanel;
@@ -92,39 +95,19 @@ public class AnalysisPanel extends JPanel {
      * @param settingsService The settings service.
      * @param specialDateService The special date service.
      * @param budgetAdjustmentService The budget adjustment service.
+     * @param financialCycleService The financial cycle service.
+     * @param panelNavigationListener Listener for panel navigation.
      */
     public AnalysisPanel(TransactionService transactionService, SettingsService settingsService,
-                          SpecialDateService specialDateService, BudgetAdjustmentService budgetAdjustmentService) {
+                          SpecialDateService specialDateService, BudgetAdjustmentService budgetAdjustmentService,
+                          FinancialCycleService financialCycleService, ActionListener panelNavigationListener) {
         this.transactionService = transactionService;
         this.settingsService = settingsService;
         this.specialDateService = specialDateService;
         this.budgetAdjustmentService = budgetAdjustmentService;
-        this.aiAssistantService = new AiAssistantService(settingsService);
-        
-        // 设置CsvDataReader的TransactionService
-        CsvDataReader.setTransactionService(transactionService);
-        
-        initComponents();
-    }
-    
-    /**
-     * Constructor for AnalysisPanel.
-     * 
-     * @param transactionService The transaction service.
-     * @param settingsService The settings service.
-     * @param specialDateService The special date service.
-     * @param budgetAdjustmentService The budget adjustment service.
-     * @param mainFrame The main frame.
-     */
-    public AnalysisPanel(TransactionService transactionService, SettingsService settingsService,
-                        SpecialDateService specialDateService, BudgetAdjustmentService budgetAdjustmentService,
-                        MainFrame mainFrame) {
-        this.transactionService = transactionService;
-        this.settingsService = settingsService;
-        this.specialDateService = specialDateService;
-        this.budgetAdjustmentService = budgetAdjustmentService;
-        this.mainFrame = mainFrame;
-        this.aiAssistantService = new AiAssistantService(settingsService);
+        this.financialCycleService = financialCycleService;
+        this.panelNavigationListener = panelNavigationListener;
+        this.aiAssistantService = new AiAssistantService(this.settingsService, this.financialCycleService);
         
         // 设置CsvDataReader的TransactionService
         CsvDataReader.setTransactionService(transactionService);
@@ -151,7 +134,8 @@ public class AnalysisPanel extends JPanel {
         
         // Add home button to header
         JButton homeButton = new JButton("HOME");
-        homeButton.addActionListener(e -> mainFrame.showPanel("home"));
+        homeButton.setActionCommand("home");
+        homeButton.addActionListener(this.panelNavigationListener);
         headerPanel.add(homeButton, BorderLayout.EAST);
         
         // Add header to panel
@@ -690,9 +674,8 @@ public class AnalysisPanel extends JPanel {
         
         summary.append("财务月统计 (").append(periodText).append(")\n\n");
         
-        // 显示设置中的财务月起始日
-        SettingsService settingsService = new SettingsService();
-        int monthStartDay = settingsService.getSettings().getMonthStartDay();
+        // 使用注入的 settingsService
+        int monthStartDay = this.settingsService.getSettings().getMonthStartDay();
         summary.append("当前财务月起始日设置: 每月").append(monthStartDay).append("日\n\n");
         
         double totalIncome = transactionService.getTotalIncome(transactions);
@@ -994,47 +977,9 @@ public class AnalysisPanel extends JPanel {
      * 刷新类别下拉列表
      */
     public void refreshCategoryList() {
-        if (mainFrame == null || mainFrame.getSettings() == null) {
-            return;
+        if (yearComboBox != null && monthNameComboBox != null) {
+            System.out.println("AnalysisPanel.refreshCategoryList called. Current year/month selections will be used on next data refresh.");
         }
-        
-        Settings settings = mainFrame.getSettings();
-        if (settings.getExpenseCategories() != null) {
-            for (String category : settings.getExpenseCategories()) {
-                // categoryComboBox.addItem(category);
-            }
-        }
-        if (settings.getIncomeCategories() != null) {
-            for (String category : settings.getIncomeCategories()) {
-                boolean exists = false;
-                // for (int i = 0; i < categoryComboBox.getItemCount(); i++) {
-                // if (category.equals(categoryComboBox.getItemAt(i))) {
-                // exists = true;
-                // break;
-                // }
-                // }
-                // if (!exists) {
-                // categoryComboBox.addItem(category);
-                // }
-            }
-        }
-        
-        // 保留之前的选择，如果它仍然存在
-        // if (selectedCategory != null) {
-            // boolean found = false;
-            // for (int i = 0; i < categoryComboBox.getItemCount(); i++) {
-                // if (selectedCategory.equals(categoryComboBox.getItemAt(i))) {
-                    // categoryComboBox.setSelectedItem(selectedCategory);
-                    // found = true;
-                    // break;
-                // }
-            // }
-            // if (!found) {
-                // categoryComboBox.setSelectedItem("All Categories");
-            // }
-        // } else {
-            // categoryComboBox.setSelectedItem("All Categories");
-        // }
     }
 
     /**
@@ -1327,5 +1272,68 @@ public class AnalysisPanel extends JPanel {
         }
         specialDatesInfo.append("\nTip: You can add/manage special dates in the Settings panel.");
         return specialDatesInfo.toString();
+    }
+
+    public boolean isThemeable() {
+        return true;
+    }
+
+    public void applyTheme(Settings settings) {
+        boolean isDark = settings.isDarkModeEnabled();
+        Color backgroundColor = isDark ? new Color(45, 45, 45) : UIManager.getColor("Panel.background");
+        Color foregroundColor = isDark ? Color.LIGHT_GRAY : UIManager.getColor("Label.foreground");
+        Color textAreaBg = isDark ? new Color(50, 50, 50) : UIManager.getColor("TextArea.background");
+        Color textAreaFg = isDark ? Color.WHITE : UIManager.getColor("TextArea.foreground");
+
+        this.setBackground(backgroundColor);
+
+        // Theme direct child panels if they are simple JPanels
+        if (currentMonthPanel != null) currentMonthPanel.setBackground(backgroundColor);
+        if (aiAssistantPanel != null) aiAssistantPanel.setBackground(backgroundColor);
+        if (budgetPanel != null) budgetPanel.setBackground(backgroundColor);
+        if (savingGoalsProgressPanel != null) savingGoalsProgressPanel.setBackground(backgroundColor);
+        
+        // Theme text areas (example)
+        Component[] components = this.getComponents();
+        for (Component component : components) {
+            if (component instanceof JScrollPane) {
+                JScrollPane scrollPane = (JScrollPane) component;
+                scrollPane.getViewport().setBackground(backgroundColor);
+                Component view = scrollPane.getViewport().getView();
+                if (view instanceof JTextArea) {
+                    view.setBackground(textAreaBg);
+                    view.setForeground(textAreaFg);
+                }
+            } else if (component instanceof JTabbedPane) {
+                JTabbedPane DUMMY_VARIABLE_NAME = (JTabbedPane) component; // TODO: Remove DUMMY_VARIABLE_NAME
+                // Theme tabbed pane (more complex, might need to iterate through tabs)
+                // For now, just its direct background
+                DUMMY_VARIABLE_NAME.setBackground(backgroundColor);
+                DUMMY_VARIABLE_NAME.setForeground(foregroundColor);
+                 for (int i = 0; i < DUMMY_VARIABLE_NAME.getTabCount(); i++) {
+                    Component tabComponent = DUMMY_VARIABLE_NAME.getComponentAt(i);
+                    if (tabComponent != null) {
+                        tabComponent.setBackground(backgroundColor); // Theme content of each tab
+                        // Recursively theme components within the tab if necessary
+                        // For now, this sets the background of the direct child of the tab.
+                    }
+                }
+            }
+            // Add more specific component theming as needed
+        }
+        
+        // Theme specific components if not covered by iteration
+        if (summaryTextArea != null) { summaryTextArea.setBackground(textAreaBg); summaryTextArea.setForeground(textAreaFg); }
+        if (categoryBreakdownTextArea != null) { categoryBreakdownTextArea.setBackground(textAreaBg); categoryBreakdownTextArea.setForeground(textAreaFg); }
+        if (aiResponseTextArea != null) { aiResponseTextArea.setBackground(textAreaBg); aiResponseTextArea.setForeground(textAreaFg); }
+        if (aiQueryField != null) { aiQueryField.setBackground(isDark ? new Color(60,60,60) :UIManager.getColor("TextField.background")); aiQueryField.setForeground(foregroundColor); }
+        if (budgetSummaryTextArea != null) { budgetSummaryTextArea.setBackground(textAreaBg); budgetSummaryTextArea.setForeground(textAreaFg); }
+        if (categoryBudgetChartTextArea != null) { categoryBudgetChartTextArea.setBackground(textAreaBg); categoryBudgetChartTextArea.setForeground(textAreaFg); }
+        if (specialDatesTextArea != null) { specialDatesTextArea.setBackground(textAreaBg); specialDatesTextArea.setForeground(textAreaFg); }
+
+
+        // Potentially re-apply to child components explicitly if UIManager changes are not picked up
+        SwingUtilities.updateComponentTreeUI(this);
+        this.repaint();
     }
 }

@@ -1,6 +1,5 @@
 package com.financetracker.gui;
 
-import java.awt.BasicStroke;
 import java.awt.Color;
 import java.awt.Font;
 import java.awt.FontMetrics;
@@ -59,35 +58,5 @@ public class AppIcon {
         g2d.dispose();
         
         return new ImageIcon(image);
-    }
-    
-    /**
-     * 创建一个圆形进度指示器图像
-     * @param size 图像大小
-     * @param progress 进度百分比（0-100）
-     * @return 进度指示器图像
-     */
-    public static Image createProgressIndicator(int size, int progress) {
-        BufferedImage image = new BufferedImage(size, size, BufferedImage.TYPE_INT_ARGB);
-        Graphics2D g2d = (Graphics2D) image.getGraphics();
-        
-        // 设置抗锯齿
-        g2d.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-        
-        // 绘制背景圆
-        g2d.setColor(new Color(200, 200, 200, 50));
-        g2d.fillOval(0, 0, size, size);
-        
-        // 绘制进度弧
-        g2d.setColor(new Color(41, 128, 185));
-        g2d.setStroke(new BasicStroke(size / 10f));
-        int arcSize = size - (size / 10);
-        int offset = size / 20;
-        g2d.drawArc(offset, offset, arcSize, arcSize, 90, (int)(-3.6 * progress));
-        
-        // 释放图形上下文
-        g2d.dispose();
-        
-        return image;
     }
 } 

@@ -1,11 +1,14 @@
 package com.financetracker.gui;
 
 import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
 import java.awt.FlowLayout;
 import java.awt.Font;
 import java.awt.GridBagConstraints;
 import java.awt.GridBagLayout;
 import java.awt.Insets;
+import java.awt.event.ActionListener;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -28,15 +31,19 @@ import javax.swing.JSpinner;
 import javax.swing.JTabbedPane;
 import javax.swing.JTable;
 import javax.swing.JTextField;
+import javax.swing.JViewport;
 import javax.swing.ListSelectionModel;
 import javax.swing.SpinnerDateModel;
 import javax.swing.SpinnerNumberModel;
+import javax.swing.SwingUtilities;
+import javax.swing.UIManager;
 import javax.swing.table.DefaultTableModel;
 
 import com.financetracker.model.SavingGoal;
 import com.financetracker.model.Settings;
 import com.financetracker.model.SpecialDate;
 import com.financetracker.service.BudgetAdjustmentService;
+import com.financetracker.service.FinancialCycleService;
 import com.financetracker.service.SettingsService;
 import com.financetracker.service.SpecialDateService;
 
@@ -50,24 +57,23 @@ enum CategoryType {
  */
 public class SettingsPanel extends JPanel {
     
-    private MainFrame mainFrame;
     private SettingsService settingsService;
     private SpecialDateService specialDateService;
     private BudgetAdjustmentService budgetAdjustmentService;
+    private FinancialCycleService financialCycleService;
+    private ActionListener panelNavigationListener;
+    private Runnable globalCategoryRefreshCallback;
+    private Runnable analysisRefreshCallback;
+    private Runnable homePanelRefreshCallback;
     
-    // CardLayout and panel for switching views - REMOVED
-    // private CardLayout settingsCardLayout;
-    // private JPanel settingsContentPanel;
+    private JTabbedPane tabbedPane;
 
-    private JTabbedPane tabbedPane; // New JTabbedPane
-
-    // Panels for each settings section (many are already fields)
     private JPanel specialDatesPanel;
     private JPanel savingsGoalsPanel;
     private JPanel categoryManagementPanel;
     private JPanel monthStartDayPanel;
     private JPanel monthEndClosingPanel;
-    private JPanel generalSettingsPanelHolder; // New panel to hold combined general settings
+    private JPanel generalSettingsPanelHolder;
 
     private JTable specialDatesTable;
     private DefaultTableModel specialDatesTableModel;
@@ -87,7 +93,6 @@ public class SettingsPanel extends JPanel {
     
     private JSpinner monthStartDaySpinner;
 
-    // --- Components for Saving Goals Management ---
     private JTable savingGoalsTable;
     private DefaultTableModel savingGoalsTableModel;
     private JTextField sgNameField;
@@ -95,55 +100,70 @@ public class SettingsPanel extends JPanel {
     private JSpinner sgTargetAmountSpinner;
     private JSpinner sgMonthlyContributionSpinner;
     private JSpinner sgStartDateSpinner;
-    private JSpinner sgTargetDateSpinner; // Optional
+    private JSpinner sgTargetDateSpinner;
     private JCheckBox sgIsActiveCheckBox;
-    private SavingGoal currentEditingSavingGoal = null; // To hold goal being edited
+    private SavingGoal currentEditingSavingGoal = null;
     private JButton addGoalButton;
     private JButton saveGoalButton;
-    // --- End Components for Saving Goals Management ---
     
     /**
      * Constructor for SettingsPanel.
      * 
-     * @param mainFrame The main frame
+     * @param settingsService Service for settings management.
+     * @param specialDateService Service for special date management.
+     * @param budgetAdjustmentService Service for budget adjustment management.
+     * @param financialCycleService Service for financial cycle operations.
+     * @param panelNavigationListener Listener for panel navigation.
+     * @param globalCategoryRefreshCallback Callback to refresh category lists globally.
+     * @param analysisRefreshCallback Callback to refresh analysis panel.
+     * @param homePanelRefreshCallback Callback to refresh home panel.
      */
-    public SettingsPanel(MainFrame mainFrame) {
-        this.mainFrame = mainFrame;
-        this.settingsService = mainFrame.getSettingsService();
-        this.specialDateService = mainFrame.getSpecialDateService();
-        this.budgetAdjustmentService = mainFrame.getBudgetAdjustmentService();
+    public SettingsPanel(SettingsService settingsService, 
+                         SpecialDateService specialDateService, 
+                         BudgetAdjustmentService budgetAdjustmentService,
+                         FinancialCycleService financialCycleService,
+                         ActionListener panelNavigationListener,
+                         Runnable globalCategoryRefreshCallback,
+                         Runnable analysisRefreshCallback,
+                         Runnable homePanelRefreshCallback) {
+        this.settingsService = settingsService;
+        this.specialDateService = specialDateService;
+        this.budgetAdjustmentService = budgetAdjustmentService;
+        this.financialCycleService = financialCycleService;
+        this.panelNavigationListener = panelNavigationListener;
+        this.globalCategoryRefreshCallback = globalCategoryRefreshCallback;
+        this.analysisRefreshCallback = analysisRefreshCallback;
+        this.homePanelRefreshCallback = homePanelRefreshCallback;
         initComponents();
+        loadSettingsData();
     }
     
     /**
      * Initializes the panel components.
      */
     private void initComponents() {
-        setLayout(new BorderLayout(10, 10)); // Main layout for SettingsPanel
+        setLayout(new BorderLayout(10, 10));
 
-        // --- Header Panel (Title and HOME button) ---
         JPanel headerPanel = new JPanel(new BorderLayout());
         headerPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         JLabel titleLabel = new JLabel("Settings");
         titleLabel.setFont(new Font("Arial", Font.BOLD, 18));
         headerPanel.add(titleLabel, BorderLayout.WEST);
         JButton homeButton = new JButton("HOME");
-        homeButton.addActionListener(e -> mainFrame.showPanel("home"));
+        homeButton.setActionCommand("home");
+        homeButton.addActionListener(this.panelNavigationListener);
         headerPanel.add(homeButton, BorderLayout.EAST);
         add(headerPanel, BorderLayout.NORTH);
 
-        // --- JTabbedPane for Settings Content ---
         tabbedPane = new JTabbedPane();
         tabbedPane.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
 
-        // Create individual settings panels
         specialDatesPanel = createSpecialDatesPanel();
         savingsGoalsPanel = createSavingsGoalsPanel();
         
-        // Create the holder panel for general settings
         generalSettingsPanelHolder = new JPanel();
         generalSettingsPanelHolder.setLayout(new BoxLayout(generalSettingsPanelHolder, BoxLayout.Y_AXIS));
-        generalSettingsPanelHolder.setBorder(BorderFactory.createEmptyBorder(10,10,10,10)); // Add some padding inside the scrollpane for this tab
+        generalSettingsPanelHolder.setBorder(BorderFactory.createEmptyBorder(10,10,10,10));
         
         categoryManagementPanel = createCategoryManagementPanel();
         monthStartDayPanel = createMonthStartDayPanel();
@@ -154,21 +174,14 @@ public class SettingsPanel extends JPanel {
         generalSettingsPanelHolder.add(monthStartDayPanel);
         generalSettingsPanelHolder.add(Box.createVerticalStrut(15));
         generalSettingsPanelHolder.add(monthEndClosingPanel);
-        generalSettingsPanelHolder.add(Box.createVerticalGlue()); // Pushes content to top
+        generalSettingsPanelHolder.add(Box.createVerticalGlue());
 
-        // Add panels as tabs to JTabbedPane, wrapped in JScrollPanes
         tabbedPane.addTab("Special Dates", new JScrollPane(specialDatesPanel));
         tabbedPane.addTab("Saving Goals", new JScrollPane(savingsGoalsPanel));
         tabbedPane.addTab("General Settings", new JScrollPane(generalSettingsPanelHolder));
         
-        // --- Container for Navigation and Content - REMOVED / REPLACED by JTabbedPane ---
-        // JPanel centerAreaPanel = new JPanel(new BorderLayout(0, 5));
-        // centerAreaPanel.add(settingsNavigationPanel, BorderLayout.NORTH);
-        // centerAreaPanel.add(settingsContentPanel, BorderLayout.CENTER);
-
-        add(tabbedPane, BorderLayout.CENTER); // Add JTabbedPane to the center
+        add(tabbedPane, BorderLayout.CENTER);
         
-        // --- Bottom Button Panel (Reset, Save) ---
         JPanel bottomButtonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         bottomButtonPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         JButton resetButton = new JButton("Reset to Default");
@@ -178,9 +191,6 @@ public class SettingsPanel extends JPanel {
         bottomButtonPanel.add(resetButton);
         bottomButtonPanel.add(saveButton);
         add(bottomButtonPanel, BorderLayout.SOUTH);
-
-        // Show the first settings tab by default - JTabbedPane does this automatically
-        // settingsCardLayout.show(settingsContentPanel, "SpecialDates"); 
     }
     
     /**
@@ -192,47 +202,40 @@ public class SettingsPanel extends JPanel {
         JPanel panel = new JPanel();
         panel.setLayout(new BorderLayout(10,10));
         
-        // Create table panel
         JPanel tablePanel = new JPanel();
         tablePanel.setLayout(new BorderLayout());
         
-        // Create table model with columns
-        String[] columns = {"Name", "Date", "Description", "Affected Category", "Amount Increase", "Budget Effect (Example)"};
+        String[] columns = {"ID", "Name", "Date", "Description", "Affected Category", "Amount Increase", "Budget Effect (Example)"};
         specialDatesTableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                return false; // Make table read-only
+                return false;
             }
         };
         
-        // Create table
         specialDatesTable = new JTable(specialDatesTableModel);
         specialDatesTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        specialDatesTable.getColumnModel().getColumn(0).setMinWidth(0);
+        specialDatesTable.getColumnModel().getColumn(0).setMaxWidth(0);
+        specialDatesTable.getColumnModel().getColumn(0).setPreferredWidth(0);
         
-        // Add explanation label
         JLabel explanationLabel = new JLabel("<html>特殊日期允许您标记特定日期并设置其对预算的影响。<br>正数表示预算增加，负数表示预算减少。</html>");
         explanationLabel.setBorder(BorderFactory.createEmptyBorder(0, 10, 10, 10));
         tablePanel.add(explanationLabel, BorderLayout.NORTH);
         
-        // Add table to scroll pane
         JScrollPane scrollPane = new JScrollPane(specialDatesTable);
-        // scrollPane.setPreferredSize(new Dimension(400, 150)); // Example of removing fixed size
         tablePanel.add(scrollPane, BorderLayout.CENTER);
         
-        // Add table panel to special dates panel
         panel.add(tablePanel, BorderLayout.CENTER);
         
-        // Create form panel
         JPanel formPanel = new JPanel();
         formPanel.setLayout(new GridBagLayout());
         formPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         
-        // Create grid bag constraints
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.insets = new Insets(5, 5, 5, 5);
         
-        // Add name field
         gbc.gridx = 0;
         gbc.gridy = 0;
         formPanel.add(new JLabel("Name:"), gbc);
@@ -242,7 +245,6 @@ public class SettingsPanel extends JPanel {
         specialDateNameField = new JTextField(20);
         formPanel.add(specialDateNameField, gbc);
         
-        // Add date field
         gbc.gridx = 0;
         gbc.gridy = 1;
         formPanel.add(new JLabel("Date:"), gbc);
@@ -256,7 +258,6 @@ public class SettingsPanel extends JPanel {
         specialDateSpinner.setEditor(specialDateEditor);
         formPanel.add(specialDateSpinner, gbc);
         
-        // Add description field
         gbc.gridx = 0;
         gbc.gridy = 2;
         formPanel.add(new JLabel("Description:"), gbc);
@@ -266,7 +267,6 @@ public class SettingsPanel extends JPanel {
         specialDateDescriptionField = new JTextField(20);
         formPanel.add(specialDateDescriptionField, gbc);
         
-        // Add affected categories field (now a JComboBox)
         gbc.gridx = 0;
         gbc.gridy = 3;
         formPanel.add(new JLabel("Affected Category (Expense):"), gbc);
@@ -274,10 +274,9 @@ public class SettingsPanel extends JPanel {
         gbc.gridx = 1;
         gbc.gridy = 3;
         specialDateCategoryComboBox = new JComboBox<>();
-        updateSpecialDateCategoryComboBox(); // Populate the combo box
+        updateSpecialDateCategoryComboBox();
         formPanel.add(specialDateCategoryComboBox, gbc);
         
-        // Add expected impact field
         gbc.gridx = 0;
         gbc.gridy = 4;
         formPanel.add(new JLabel("Amount Increase:"), gbc);
@@ -287,11 +286,9 @@ public class SettingsPanel extends JPanel {
         specialDateImpactField = new JTextField(10);
         formPanel.add(specialDateImpactField, gbc);
         
-        // Create button panel
         JPanel buttonPanel = new JPanel();
         buttonPanel.setLayout(new FlowLayout(FlowLayout.RIGHT));
         
-        // Add buttons to button panel
         JButton addButton = new JButton("Add");
         addButton.addActionListener(e -> addSpecialDate());
         
@@ -305,17 +302,12 @@ public class SettingsPanel extends JPanel {
         buttonPanel.add(editButton);
         buttonPanel.add(deleteButton);
         
-        // Add button panel to form panel
         gbc.gridx = 0;
         gbc.gridy = 5;
         gbc.gridwidth = 2;
         formPanel.add(buttonPanel, gbc);
         
-        // Add form panel to special dates panel
         panel.add(formPanel, BorderLayout.SOUTH);
-        
-        // Load special dates
-        loadSpecialDates();
         
         return panel;
     }
@@ -328,12 +320,11 @@ public class SettingsPanel extends JPanel {
     private JPanel createSavingsGoalsPanel() {
         JPanel panel = new JPanel(new BorderLayout(10, 10));
         
-        // --- Table for displaying saving goals ---
         String[] goalColumns = {"Name", "Target Amount", "Current Amount", "Monthly Contribution", "Start Date", "Target Date", "Active"};
         savingGoalsTableModel = new DefaultTableModel(goalColumns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                return false; // Table is for display only
+                return false;
             }
         };
         savingGoalsTable = new JTable(savingGoalsTableModel);
@@ -349,13 +340,10 @@ public class SettingsPanel extends JPanel {
             }
         });
         JScrollPane tableScrollPane = new JScrollPane(savingGoalsTable);
-        // tableScrollPane.setPreferredSize(new Dimension(400,150)); // Example of removing fixed size
         panel.add(tableScrollPane, BorderLayout.CENTER);
 
-        // --- Bottom Panel: Holds table actions and the form ---
         JPanel bottomPanel = new JPanel(new BorderLayout(5, 5));
 
-        // --- Table Actions Panel (Edit, Delete) ---
         JPanel tableActionsPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton editSelectedGoalButton = new JButton("Edit Selected");
         editSelectedGoalButton.addActionListener(e -> editSelectedSavingGoal());
@@ -365,7 +353,6 @@ public class SettingsPanel extends JPanel {
         tableActionsPanel.add(deleteSelectedGoalButton);
         bottomPanel.add(tableActionsPanel, BorderLayout.NORTH);
 
-        // --- Form for adding/editing saving goals ---
         JPanel formOuterPanel = new JPanel(new BorderLayout(5,5));
         formOuterPanel.setBorder(BorderFactory.createEmptyBorder(10,0,0,0));
         
@@ -373,66 +360,56 @@ public class SettingsPanel extends JPanel {
         GridBagConstraints formFieldsGbc = new GridBagConstraints();
         formFieldsGbc.fill = GridBagConstraints.HORIZONTAL;
         formFieldsGbc.insets = new Insets(5, 5, 5, 5);
-        formFieldsGbc.weightx = 1.0; // Allow fields to use horizontal space
-        formFieldsGbc.gridx = 0; // Label column
+        formFieldsGbc.weightx = 1.0;
+        formFieldsGbc.gridx = 0;
         formFieldsGbc.anchor = GridBagConstraints.WEST;
         
         GridBagConstraints fieldConstraints = new GridBagConstraints();
         fieldConstraints.fill = GridBagConstraints.HORIZONTAL;
         fieldConstraints.insets = new Insets(5, 5, 5, 5);
         fieldConstraints.weightx = 1.0;
-        fieldConstraints.gridx = 1; // Field column
+        fieldConstraints.gridx = 1;
 
         int y = 0;
 
-        // Name
         formFieldsGbc.gridy = y; formFieldsPanel.add(new JLabel("Goal Name:"), formFieldsGbc);
         fieldConstraints.gridy = y++; sgNameField = new JTextField(); formFieldsPanel.add(sgNameField, fieldConstraints);
 
-        // Description
         formFieldsGbc.gridy = y; formFieldsPanel.add(new JLabel("Description (Optional):"), formFieldsGbc);
         fieldConstraints.gridy = y++; sgDescriptionField = new JTextField(); formFieldsPanel.add(sgDescriptionField, fieldConstraints);
 
-        // Target Amount
         formFieldsGbc.gridy = y; formFieldsPanel.add(new JLabel("Target Amount:"), formFieldsGbc);
-        sgTargetAmountSpinner = new JSpinner(new SpinnerNumberModel(1000.0, 0.0, Double.MAX_VALUE, 100.0)); // Restore default
+        sgTargetAmountSpinner = new JSpinner(new SpinnerNumberModel(1000.0, 0.0, Double.MAX_VALUE, 100.0));
         fieldConstraints.gridy = y++; formFieldsPanel.add(sgTargetAmountSpinner, fieldConstraints);
 
-        // Monthly Contribution
         formFieldsGbc.gridy = y; formFieldsPanel.add(new JLabel("Monthly Contribution:"), formFieldsGbc);
-        sgMonthlyContributionSpinner = new JSpinner(new SpinnerNumberModel(50.0, 0.0, Double.MAX_VALUE, 10.0)); // Restore default
+        sgMonthlyContributionSpinner = new JSpinner(new SpinnerNumberModel(50.0, 0.0, Double.MAX_VALUE, 10.0));
         fieldConstraints.gridy = y++; formFieldsPanel.add(sgMonthlyContributionSpinner, fieldConstraints);
 
-        // Start Date
         formFieldsGbc.gridy = y; formFieldsPanel.add(new JLabel("Start Date:"), formFieldsGbc);
         sgStartDateSpinner = new JSpinner(new SpinnerDateModel(new Date(), null, null, Calendar.DAY_OF_MONTH));
         sgStartDateSpinner.setEditor(new JSpinner.DateEditor(sgStartDateSpinner, "yyyy-MM-dd"));
         fieldConstraints.gridy = y++; formFieldsPanel.add(sgStartDateSpinner, fieldConstraints);
 
-        // Target Date (Optional)
         formFieldsGbc.gridy = y; formFieldsPanel.add(new JLabel("Target Date (Optional):"), formFieldsGbc);
-        sgTargetDateSpinner = new JSpinner(new SpinnerDateModel(Date.from(LocalDate.now().plusYears(1).atStartOfDay(ZoneId.systemDefault()).toInstant()), null, null, Calendar.DAY_OF_MONTH)); // Restore default
+        sgTargetDateSpinner = new JSpinner(new SpinnerDateModel(Date.from(LocalDate.now().plusYears(1).atStartOfDay(ZoneId.systemDefault()).toInstant()), null, null, Calendar.DAY_OF_MONTH));
         sgTargetDateSpinner.setEditor(new JSpinner.DateEditor(sgTargetDateSpinner, "yyyy-MM-dd"));
         fieldConstraints.gridy = y++; formFieldsPanel.add(sgTargetDateSpinner, fieldConstraints);
 
-        // Is Active
         formFieldsGbc.gridy = y; formFieldsPanel.add(new JLabel("Active Goal:"), formFieldsGbc);
         sgIsActiveCheckBox = new JCheckBox();
-        sgIsActiveCheckBox.setSelected(true); // Default to active
+        sgIsActiveCheckBox.setSelected(true);
         fieldConstraints.gridy = y++; formFieldsPanel.add(sgIsActiveCheckBox, fieldConstraints);
         
-        // Wrap formFieldsPanel in a JScrollPane for flexibility
         JScrollPane formFieldsScrollPane = new JScrollPane(formFieldsPanel);
         formFieldsScrollPane.setBorder(BorderFactory.createEmptyBorder()); 
-        // formFieldsScrollPane.setPreferredSize(new Dimension(400, 200)); // Example of removing fixed size
         formOuterPanel.add(formFieldsScrollPane, BorderLayout.CENTER);
 
-        // Buttons for form actions (Add, Save, Clear)
         JPanel formButtonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         this.addGoalButton = new JButton("Add New Goal");
-        this.addGoalButton.addActionListener(e -> addSavingGoal()); // Ensure ActionListener is set
+        this.addGoalButton.addActionListener(e -> addSavingGoal());
         this.saveGoalButton = new JButton("Save Edited Goal");
-        this.saveGoalButton.addActionListener(e -> saveEditedSavingGoal()); // Ensure ActionListener is set
+        this.saveGoalButton.addActionListener(e -> saveEditedSavingGoal());
         this.saveGoalButton.setEnabled(false);
         JButton clearFormButton = new JButton("Clear Form / Cancel Edit");
         clearFormButton.addActionListener(e -> clearSavingGoalForm());
@@ -453,29 +430,28 @@ public class SettingsPanel extends JPanel {
      * Loads special dates into the table.
      */
     public void loadSpecialDates() {
-        // Clear table
+        if (specialDatesTableModel == null || specialDateService == null || settingsService == null) return;
         specialDatesTableModel.setRowCount(0);
         
-        // Get all special dates
-        List<SpecialDate> specialDates = specialDateService.getAllSpecialDates();
+        Settings settings = settingsService.getSettings();
+        if (settings == null || settings.getSpecialDates() == null) return;
+        List<SpecialDate> specialDates = settings.getSpecialDates();
         
-        // Add rows to table
         for (SpecialDate specialDate : specialDates) {
-            Settings settings = settingsService.getSettings();
-            double baseBudget = (settings != null) ? settings.getMonthlyBudget() : 0.0; // Handle null settings
+            double baseBudget = (settings != null) ? settings.getMonthlyBudget() : 0.0;
             double amountIncreaseValue = specialDate.getAmountIncrease();
-            double adjustedBudget = baseBudget + amountIncreaseValue; // This example might be too simplistic if category specific
+            double adjustedBudget = baseBudget + amountIncreaseValue;
             String budgetEffect = String.format("%.2f + %.2f = %.2f", baseBudget, amountIncreaseValue, adjustedBudget);
             
-            Object[] row = {
+            specialDatesTableModel.addRow(new Object[]{
+                specialDate.getId(),
                 specialDate.getName(),
-                specialDate.getDate().toString(),
+                specialDate.getDate().format(DateTimeFormatter.ISO_LOCAL_DATE),
                 specialDate.getDescription(),
                 specialDate.getAffectedCategory(),
                 String.format("%.2f", specialDate.getAmountIncrease()),
                 budgetEffect
-            };
-            specialDatesTableModel.addRow(row);
+            });
         }
     }
     
@@ -484,57 +460,43 @@ public class SettingsPanel extends JPanel {
      */
     private void addSpecialDate() {
         try {
-            // Parse form data
             String name = specialDateNameField.getText().trim();
             
-            // 从日期选择器获取日期
             Date selectedDateValue = (Date) specialDateSpinner.getValue();
             LocalDate date = selectedDateValue.toInstant().atZone(ZoneId.systemDefault()).toLocalDate();
             
             String description = specialDateDescriptionField.getText().trim();
             String affectedCategory = (String) specialDateCategoryComboBox.getSelectedItem();
-            double amountIncrease = 0.0;
-            try {
-                amountIncrease = Double.parseDouble(specialDateImpactField.getText().trim());
-            } catch (NumberFormatException ex) {
-                JOptionPane.showMessageDialog(this, "Invalid amount for special date impact.", "Error", JOptionPane.ERROR_MESSAGE);
+            double amountIncrease = Double.parseDouble(specialDateImpactField.getText());
+
+            if (name.isEmpty() || affectedCategory == null || affectedCategory.trim().isEmpty()) {
+                JOptionPane.showMessageDialog(this, "Name and Affected Category are required.", "Input Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
 
-            // Validate form data
-            if (name.isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Please enter a name for the special date.", "Error", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-            if (affectedCategory == null || affectedCategory.trim().isEmpty()) {
-                JOptionPane.showMessageDialog(this, "Please select an affected category for the special date.", "Error", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-            
-            // Create special date using appropriate constructor
             SpecialDate specialDate = new SpecialDate();
             specialDate.setName(name);
             specialDate.setDate(date);
             specialDate.setDescription(description);
             specialDate.setAffectedCategory(affectedCategory);
             specialDate.setAmountIncrease(amountIncrease);
-            specialDate.setRecurring(false);
             specialDate.setRecurrenceType(SpecialDate.RecurrenceType.NONE);
             
-            // Add special date
             Settings settings = settingsService.getSettings();
             settings.addSpecialDate(specialDate);
             settingsService.saveSettings();
+            
             loadSpecialDates();
             clearSpecialDateForm();
             updateSpecialDateCategoryComboBox();
-            mainFrame.refreshCategoryLists();
-            mainFrame.triggerAnalysisPanelRefresh();
+            if (globalCategoryRefreshCallback != null) globalCategoryRefreshCallback.run();
+            if (analysisRefreshCallback != null) analysisRefreshCallback.run();
             JOptionPane.showMessageDialog(this, "Special date added successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
         } catch (NumberFormatException e) {
-            JOptionPane.showMessageDialog(this, "Invalid amount format.", "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Invalid amount format for impact.", "Input Error", JOptionPane.ERROR_MESSAGE);
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Error adding special date: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            e.printStackTrace();
         }
     }
     
@@ -548,30 +510,25 @@ public class SettingsPanel extends JPanel {
             return;
         }
 
-        // Retrieve data from table (assuming order of columns)
-        String name = (String) specialDatesTableModel.getValueAt(selectedRow, 0);
-        LocalDate date = LocalDate.parse((String) specialDatesTableModel.getValueAt(selectedRow, 1));
-        String description = (String) specialDatesTableModel.getValueAt(selectedRow, 2);
-        String affectedCategoryFromTable = (String) specialDatesTableModel.getValueAt(selectedRow, 3);
+        String id = (String) specialDatesTableModel.getValueAt(selectedRow, 0);
+        String name = (String) specialDatesTableModel.getValueAt(selectedRow, 1);
+        LocalDate date = LocalDate.parse((String) specialDatesTableModel.getValueAt(selectedRow, 2));
+        String description = (String) specialDatesTableModel.getValueAt(selectedRow, 3);
+        String affectedCategoryFromTable = (String) specialDatesTableModel.getValueAt(selectedRow, 4);
         double amountIncrease;
         try {
-            String amountStr = ((String) specialDatesTableModel.getValueAt(selectedRow, 4)).replaceAll("[^\\d.-]", "");
+            String amountStr = ((String) specialDatesTableModel.getValueAt(selectedRow, 5)).replaceAll("[^\\d.-]", "");
             amountIncrease = Double.parseDouble(amountStr);
         } catch (NumberFormatException e) {
              JOptionPane.showMessageDialog(this, "Could not parse amount increase from table for editing.", "Error", JOptionPane.ERROR_MESSAGE);
              return;
         }
 
-        // Populate form fields
         specialDateNameField.setText(name);
         specialDateSpinner.setValue(Date.from(date.atStartOfDay(ZoneId.systemDefault()).toInstant()));
         specialDateDescriptionField.setText(description);
         specialDateCategoryComboBox.setSelectedItem(affectedCategoryFromTable);
         specialDateImpactField.setText(String.format("%.2f", amountIncrease));
-        
-        // For simplicity, editing means deleting the old one and adding a new one with current form data
-        // This is not ideal for preserving ID or complex recurrence settings not exposed in this simple form.
-        // A more robust edit would fetch the full SpecialDate object and allow modifying its properties.
     }
     
     /**
@@ -580,29 +537,31 @@ public class SettingsPanel extends JPanel {
     private void deleteSpecialDate() {
         int selectedRow = specialDatesTable.getSelectedRow();
         if (selectedRow == -1) {
-            JOptionPane.showMessageDialog(this, "Please select a special date to delete.", "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Please select a special date to delete.", "No Selection", JOptionPane.WARNING_MESSAGE);
             return;
         }
         
-        // Confirm deletion
-        int confirm = JOptionPane.showConfirmDialog(this, "Are you sure you want to delete this special date?", "Confirm Deletion", JOptionPane.YES_NO_OPTION);
+        String idToDelete = (String) specialDatesTableModel.getValueAt(selectedRow, 0);
+        String nameToDelete = (String) specialDatesTableModel.getValueAt(selectedRow, 1);
+
+        int confirm = JOptionPane.showConfirmDialog(this, "Are you sure you want to delete this special date: " + nameToDelete + "?", "Confirm Deletion", JOptionPane.YES_NO_OPTION);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
         
-        // Delete special date
         Settings settings = settingsService.getSettings();
-        List<SpecialDate> specialDates = settings.getSpecialDates();
-        if (selectedRow >= 0 && selectedRow < specialDates.size()) {
-            SpecialDate specialDateToDelete = specialDates.get(selectedRow);
-            settings.removeSpecialDate(specialDateToDelete.getId());
+        boolean removed = settings.removeSpecialDate(idToDelete);
+        
+        if (removed) {
             settingsService.saveSettings();
             loadSpecialDates();
             clearSpecialDateForm();
             updateSpecialDateCategoryComboBox();
-            mainFrame.refreshCategoryLists();
-            mainFrame.triggerAnalysisPanelRefresh();
+            if (globalCategoryRefreshCallback != null) globalCategoryRefreshCallback.run();
+            if (analysisRefreshCallback != null) analysisRefreshCallback.run();
             JOptionPane.showMessageDialog(this, "Special date deleted successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+        } else {
+            JOptionPane.showMessageDialog(this, "Could not delete the special date with ID: " + idToDelete, "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
     
@@ -633,12 +592,12 @@ public class SettingsPanel extends JPanel {
     private void addCategory(CategoryType type) {
         String categoryName;
         List<String> categories;
-        Settings settings = mainFrame.getSettings();
+        Settings settings = settingsService.getSettings();
 
         if (type == CategoryType.EXPENSE) {
             categoryName = newExpenseCategoryField.getText().trim();
             categories = settings.getExpenseCategories();
-        } else { // INCOME
+        } else {
             categoryName = newIncomeCategoryField.getText().trim();
             categories = settings.getIncomeCategories();
         }
@@ -662,7 +621,7 @@ public class SettingsPanel extends JPanel {
         }
         
         refreshCategoryDisplay();
-        mainFrame.refreshCategoryLists(); // Refresh lists in other panels like TransactionPanel
+        if (globalCategoryRefreshCallback != null) globalCategoryRefreshCallback.run();
 
         JOptionPane.showMessageDialog(this, "Category added successfully.", "Success", JOptionPane.INFORMATION_MESSAGE);
     }
@@ -673,17 +632,15 @@ public class SettingsPanel extends JPanel {
      * @param type The type of category (EXPENSE or INCOME).
      */
     private void deleteCategory(String categoryToDelete, CategoryType type) {
-        try {
-            int confirm = JOptionPane.showConfirmDialog(this,
-                    "Are you sure you want to delete the category \\\"" + categoryToDelete + "\\\"?\\n" +
-                    "Transactions using this category will remain unchanged.",
-                    "Confirm Delete", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
+        if (categoryToDelete == null || categoryToDelete.trim().isEmpty()) return;
 
-            if (confirm != JOptionPane.YES_OPTION) {
-                return;
-            }
+        int confirm = JOptionPane.showConfirmDialog(this, 
+            "Are you sure you want to delete the category: " + categoryToDelete + "?", 
+            "Confirm Deletion", 
+            JOptionPane.YES_NO_OPTION);
 
-            Settings settings = mainFrame.getSettings();
+        if (confirm == JOptionPane.YES_OPTION) {
+            Settings settings = settingsService.getSettings();
             boolean removed;
 
             if (type == CategoryType.EXPENSE) {
@@ -692,7 +649,7 @@ public class SettingsPanel extends JPanel {
                     return;
                 }
                 removed = settings.removeExpenseCategory(categoryToDelete);
-            } else { // INCOME
+            } else {
                 if (settings.getIncomeCategories().size() <= 1) {
                     JOptionPane.showMessageDialog(this, "At least one income category must be kept.", "Cannot Delete", JOptionPane.ERROR_MESSAGE);
                     return;
@@ -701,14 +658,13 @@ public class SettingsPanel extends JPanel {
             }
 
             if (removed) {
+                settingsService.saveSettings();
                 refreshCategoryDisplay();
-                mainFrame.refreshCategoryLists();
+                if (globalCategoryRefreshCallback != null) globalCategoryRefreshCallback.run();
                 JOptionPane.showMessageDialog(this, "Category deleted successfully.", "Success", JOptionPane.INFORMATION_MESSAGE);
             } else {
                 JOptionPane.showMessageDialog(this, "Category not found or could not be deleted.", "Error", JOptionPane.ERROR_MESSAGE);
             }
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "Error deleting category: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
     
@@ -716,13 +672,13 @@ public class SettingsPanel extends JPanel {
      * Refreshes the display of both expense and income categories.
      */
     public void refreshCategoryDisplay() {
-        if (expenseCategoriesDisplayPanel == null || incomeCategoriesDisplayPanel == null || mainFrame == null || mainFrame.getSettings() == null) {
+        if (expenseCategoriesDisplayPanel == null || incomeCategoriesDisplayPanel == null || settingsService == null || settingsService.getSettings() == null) {
             return;
         }
-        Settings settings = mainFrame.getSettings();
+        Settings settings = settingsService.getSettings();
         populateCategoryPanel(expenseCategoriesDisplayPanel, settings.getExpenseCategories(), CategoryType.EXPENSE);
         populateCategoryPanel(incomeCategoriesDisplayPanel, settings.getIncomeCategories(), CategoryType.INCOME);
-        updateSpecialDateCategoryComboBox(); // Update the combo box when categories are refreshed
+        updateSpecialDateCategoryComboBox();
     }
 
     /**
@@ -736,14 +692,11 @@ public class SettingsPanel extends JPanel {
         if (categories != null) {
             for (String category : categories) {
                 JPanel categoryItemPanel = new JPanel(new FlowLayout(FlowLayout.LEFT, 5, 0));
-                // Optional: add a small border or background to distinguish items visually
-                // categoryItemPanel.setBorder(BorderFactory.createEtchedBorder()); 
                 
                 JLabel categoryLabel = new JLabel(category);
                 categoryItemPanel.add(categoryLabel);
 
                 JButton deleteButton = new JButton("×");
-                // Styling for a smaller delete button
                 deleteButton.setFont(new Font(deleteButton.getFont().getName(), Font.BOLD, 12));
                 deleteButton.setMargin(new Insets(0, 2, 0, 2)); 
                 deleteButton.setToolTipText("Delete this category");
@@ -761,44 +714,35 @@ public class SettingsPanel extends JPanel {
      * Resets settings to default values.
      */
     private void resetToDefault() {
-        // Confirm reset
         int confirm = JOptionPane.showConfirmDialog(this, "Are you sure you want to reset all settings to default values?", "Confirm Reset", JOptionPane.YES_NO_OPTION);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
         
-        // Reset settings
         settingsService.resetToDefault();
-        Settings settings = settingsService.getSettings();
         
-        // Update main frame
-        mainFrame.setSettings(settings);
+        loadSettingsData();
         
-        // Show success message
         JOptionPane.showMessageDialog(this, "Settings reset to default values.", "Success", JOptionPane.INFORMATION_MESSAGE);
         
-        // Refresh panel
-        mainFrame.showPanel("settings");
+        if (globalCategoryRefreshCallback != null) globalCategoryRefreshCallback.run();
+        if (analysisRefreshCallback != null) analysisRefreshCallback.run();
+        if (homePanelRefreshCallback != null) homePanelRefreshCallback.run();
     }
     
     /**
-     * Saves changes to settings.
+     * Saves all changes made in the settings panel.
      */
     private void saveChanges() {
-        // Save financial month settings first, as they are part of general settings
         saveFinancialMonthSettings();
-
-        // Update and save settings
-        Settings settings = settingsService.getSettings();
-        // ... (other settings might be saved here if not handled by specific panels/tabs)
-
-        // Persist all changes made
+        
         settingsService.saveSettings();
-        mainFrame.setSettings(settings); // Update MainFrame's settings instance
-        mainFrame.refreshCategoryLists(); // Refresh category lists in other panels
-        mainFrame.triggerAnalysisPanelRefresh(); // Refresh AnalysisPanel
 
-        JOptionPane.showMessageDialog(this, "All settings saved successfully!", "Settings Saved", JOptionPane.INFORMATION_MESSAGE);
+        if (globalCategoryRefreshCallback != null) globalCategoryRefreshCallback.run();
+        if (analysisRefreshCallback != null) analysisRefreshCallback.run();
+        if (homePanelRefreshCallback != null) homePanelRefreshCallback.run();
+
+        JOptionPane.showMessageDialog(this, "Settings changes (like Month Start Day) saved!\nMost other settings (categories, special dates, goals) are saved upon modification.", "Settings Saved", JOptionPane.INFORMATION_MESSAGE);
     }
     
     /**
@@ -806,34 +750,24 @@ public class SettingsPanel extends JPanel {
      */
     private void saveFinancialMonthSettings() {
         try {
-            // 获取设置值
             int monthStartDay = (int) monthStartDaySpinner.getValue();
-            
-            // 更新设置
-            Settings settings = mainFrame.getSettings();
+            Settings settings = settingsService.getSettings();
             settings.setMonthStartDay(monthStartDay);
             
-            // 保存设置
-            settingsService.getSettings().setMonthStartDay(monthStartDay);
             boolean saved = settingsService.saveSettings();
             
             if (saved) {
-                // 更新主窗口设置
-                mainFrame.setSettings(settings);
-                
-                // 显示成功消息
                 JOptionPane.showMessageDialog(this, 
-                        "财务月设置已保存。系统将使用每月" + monthStartDay + "日作为财务月起始日。", 
-                        "保存成功", JOptionPane.INFORMATION_MESSAGE);
+                        "Financial month settings have been updated. New month start day: " + monthStartDay + ".", 
+                        "Settings Update", JOptionPane.INFORMATION_MESSAGE);
+                if (analysisRefreshCallback != null) analysisRefreshCallback.run();
+                if (homePanelRefreshCallback != null) homePanelRefreshCallback.run();
             } else {
-                JOptionPane.showMessageDialog(this, 
-                        "保存设置失败，请稍后再试。", 
-                        "保存失败", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Failed to save financial month settings.", "Error", JOptionPane.ERROR_MESSAGE);
             }
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, 
-                    "保存设置时出错: " + e.getMessage(), 
-                    "错误", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Error saving financial month settings: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            e.printStackTrace();
         }
     }
     
@@ -845,7 +779,7 @@ public class SettingsPanel extends JPanel {
     }
 
     public void loadSavingGoals() {
-        if (savingGoalsTableModel == null) return; // Guard against null if called too early
+        if (savingGoalsTableModel == null || settingsService == null) return; 
         savingGoalsTableModel.setRowCount(0);
         Settings settings = settingsService.getSettings();
         if (settings != null && settings.getSavingGoals() != null) {
@@ -868,7 +802,6 @@ public class SettingsPanel extends JPanel {
         String name = sgNameField.getText();
         String description = sgDescriptionField.getText();
 
-        // Restore direct value fetching
         double targetAmount = ((Number) sgTargetAmountSpinner.getValue()).doubleValue();
         double monthlyContributionRaw = ((Number) sgMonthlyContributionSpinner.getValue()).doubleValue();
         
@@ -876,12 +809,10 @@ public class SettingsPanel extends JPanel {
         Date targetDateRaw = (Date) sgTargetDateSpinner.getValue(); 
         boolean isActive = sgIsActiveCheckBox.isSelected();
 
-        // --- Validations ---
         if (name.trim().isEmpty()) {
             JOptionPane.showMessageDialog(this, "Saving goal name cannot be empty.", "Input Error", JOptionPane.ERROR_MESSAGE);
             return null;
         }
-        // Target amount value validation
         if (targetAmount <= 0) {
             JOptionPane.showMessageDialog(this, "Target amount must be greater than zero.", "Input Error", JOptionPane.ERROR_MESSAGE);
             return null;
@@ -898,13 +829,11 @@ public class SettingsPanel extends JPanel {
             if (tempTargetDate.isAfter(startDate)) {
                 targetDate = tempTargetDate; 
             }
-            // No explicit "else" with JOptionPane here for invalid date, let the logic flow.
         }
 
         double finalMonthlyContribution = 0;
         LocalDate finalTargetDate = null;
         
-        // Restore the logic from the first successful fix for calculation bug
         LocalDate initialTargetDateDefault = LocalDate.now().plusYears(1);
         boolean targetDateIsEffectivelyInitialDefault = false;
         if (targetDateRaw != null) {
@@ -918,11 +847,10 @@ public class SettingsPanel extends JPanel {
         boolean userHasExplicitlySetTargetDate = (targetDate != null && !targetDateIsEffectivelyInitialDefault);
 
         if (userHasExplicitlySetTargetDate) {
-            // Case A: User explicitly set the target date. Calculate Monthly Contribution.
             finalTargetDate = targetDate;
             long numberOfMonths = ChronoUnit.MONTHS.between(startDate, finalTargetDate);
 
-            if (numberOfMonths == 0 && startDate.isBefore(finalTargetDate)) { // Less than a full month but valid period
+            if (numberOfMonths == 0 && startDate.isBefore(finalTargetDate)) {
                 numberOfMonths = 1;
             }
             if (numberOfMonths <= 0) {
@@ -935,28 +863,18 @@ public class SettingsPanel extends JPanel {
             }
             finalMonthlyContribution = targetAmount / numberOfMonths;
 
-            // Update UI: Set the calculated monthly contribution
             sgMonthlyContributionSpinner.setValue(finalMonthlyContribution);
-            // Ensure target date spinner reflects the date used for calculation (it should already, but good for consistency)
-            if (finalTargetDate != null) { // finalTargetDate should be non-null here
+            if (finalTargetDate != null) {
                 sgTargetDateSpinner.setValue(Date.from(finalTargetDate.atStartOfDay(ZoneId.systemDefault()).toInstant()));
             }
 
-            // If monthly contribution was also effectively provided by user (e.g., they typed it before changing target date),
-            // check for discrepancy with the newly calculated one.
             if (monthlyContributionEffectivelyProvided) {
-                double tolerance = 0.01; // Tolerance for floating point comparison (e.g., 1 cent)
+                double tolerance = 0.01;
                 if (Math.abs(finalMonthlyContribution - monthlyContributionRaw) > tolerance) { 
-                     // Ask user if they want to use the new calculated monthly contribution or stick to what they might have typed previously.
-                     // For simplicity in this version, we will prioritize the calculation based on the user-set Target Date.
-                     // The sgMonthlyContributionSpinner is already updated with finalMonthlyContribution.
-                     // A more complex dialog could offer choices, but here we assume user changing TargetDate implies they want contribution to adjust.
                 }
             }
 
         } else if (monthlyContributionEffectivelyProvided && !userHasExplicitlySetTargetDate) {
-            // Case B: Monthly contribution is provided, and target date was NOT explicitly set by user (it's default or invalid).
-            // Calculate Target Date (this is the original bug fix you requested).
             finalMonthlyContribution = monthlyContributionRaw;
             if (finalMonthlyContribution <= 0) { 
                  JOptionPane.showMessageDialog(this, "Monthly contribution must be a positive value to calculate target date.", "Input Error", JOptionPane.ERROR_MESSAGE);
@@ -971,20 +889,12 @@ public class SettingsPanel extends JPanel {
             finalTargetDate = startDate.plusMonths(numberOfMonths);
             
             sgTargetDateSpinner.setValue(Date.from(finalTargetDate.atStartOfDay(ZoneId.systemDefault()).toInstant()));
-            sgMonthlyContributionSpinner.setValue(finalMonthlyContribution); // Ensure it reflects the value used
+            sgMonthlyContributionSpinner.setValue(finalMonthlyContribution);
 
         } else if (monthlyContributionEffectivelyProvided && userHasExplicitlySetTargetDate) {
-            // Case C: Both were effectively provided (e.g., user set target date, calculation set monthly, or user explicitly set both).
-            // This now acts as a final check, primarily for when user might have set both fields manually and there's a conflict.
-            // Or, if the logic from Case A (after user sets target date) leads here because monthly contribution was also present.
-            // We will use the values that are currently in `finalMonthlyContribution` and `finalTargetDate` if they have been set by prior blocks,
-            // otherwise, fall back to raw inputs if this is the first block hit.
-
-            // If this block is reached directly (e.g., user typed both), initialize from raw inputs.
-            if (finalTargetDate == null) finalTargetDate = targetDate; // From user input or default
-            if (finalMonthlyContribution == 0 && monthlyContributionRaw > 0.001) finalMonthlyContribution = monthlyContributionRaw; // from user input
+            if (finalTargetDate == null) finalTargetDate = targetDate;
+            if (finalMonthlyContribution == 0 && monthlyContributionRaw > 0.001) finalMonthlyContribution = monthlyContributionRaw;
             
-            // If still one is missing after trying to populate from prior blocks or raw, it's an issue.
             if (finalTargetDate == null || finalMonthlyContribution <= 0.001) {
                  JOptionPane.showMessageDialog(this, "Both target date and monthly contribution need to be effectively set to check for discrepancies or save.", "Input Error", JOptionPane.ERROR_MESSAGE);
                  return null;
@@ -1017,13 +927,10 @@ public class SettingsPanel extends JPanel {
                      return null; 
                  }
              }
-            // If proceeding, ensure UI reflects values used for the final SavingGoal object
             sgMonthlyContributionSpinner.setValue(finalMonthlyContribution);
             sgTargetDateSpinner.setValue(Date.from(finalTargetDate.atStartOfDay(ZoneId.systemDefault()).toInstant()));
 
         } else { 
-            // Case D: Insufficient information to proceed with any calculation.
-            // This means neither target date was explicitly set nor was a monthly contribution provided.
             JOptionPane.showMessageDialog(this, "Please provide either a positive Monthly Contribution or an explicit Target Date (after start date).", "Input Error", JOptionPane.ERROR_MESSAGE);
             return null;
         }
@@ -1032,7 +939,7 @@ public class SettingsPanel extends JPanel {
         double currentAmount = (existingGoal != null) ? existingGoal.getCurrentAmount() : 0.0;
         String associatedAccount = (existingGoal != null) ? existingGoal.getAssociatedAccount() : null;
 
-        if (finalMonthlyContribution < 0) finalMonthlyContribution = 0; // Should not happen if logic above is correct
+        if (finalMonthlyContribution < 0) finalMonthlyContribution = 0;
 
         return new SavingGoal(id, name, description, targetAmount, currentAmount, finalMonthlyContribution, startDate, finalTargetDate, isActive, associatedAccount);
     }
@@ -1045,7 +952,8 @@ public class SettingsPanel extends JPanel {
             settingsService.saveSettings();
             loadSavingGoals();
             clearSavingGoalForm();
-            mainFrame.triggerAnalysisPanelRefresh();
+            if (analysisRefreshCallback != null) analysisRefreshCallback.run();
+            if (homePanelRefreshCallback != null) homePanelRefreshCallback.run();
             JOptionPane.showMessageDialog(this, "New saving goal added successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
         }
     }
@@ -1053,16 +961,16 @@ public class SettingsPanel extends JPanel {
     private void clearSavingGoalForm() {
         sgNameField.setText("");
         sgDescriptionField.setText("");
-        sgTargetAmountSpinner.setValue(1000.0); // Restore default
-        sgMonthlyContributionSpinner.setValue(50.0); // Restore default
+        sgTargetAmountSpinner.setValue(1000.0);
+        sgMonthlyContributionSpinner.setValue(50.0);
         sgStartDateSpinner.setValue(new Date()); 
-        sgTargetDateSpinner.setValue(Date.from(LocalDate.now().plusYears(1).atStartOfDay(ZoneId.systemDefault()).toInstant())); // Restore default
+        sgTargetDateSpinner.setValue(Date.from(LocalDate.now().plusYears(1).atStartOfDay(ZoneId.systemDefault()).toInstant()));
         sgIsActiveCheckBox.setSelected(true);
         
         currentEditingSavingGoal = null;
         if (addGoalButton != null) addGoalButton.setEnabled(true);
         if (saveGoalButton != null) saveGoalButton.setEnabled(false);
-        sgNameField.setEditable(true); // Allow editing name for new entries
+        sgNameField.setEditable(true);
     }
 
     private void editSelectedSavingGoal() {
@@ -1073,7 +981,7 @@ public class SettingsPanel extends JPanel {
         }
 
         String goalName = (String) savingGoalsTableModel.getValueAt(selectedRow, 0);
-        Settings settings = mainFrame.getSettings();
+        Settings settings = settingsService.getSettings();
         SavingGoal goalToEdit = null;
 
         for (SavingGoal goal : settings.getSavingGoals()) {
@@ -1094,11 +1002,11 @@ public class SettingsPanel extends JPanel {
             if (goalToEdit.getTargetDate() != null) {
                 sgTargetDateSpinner.setValue(Date.from(goalToEdit.getTargetDate().atStartOfDay(ZoneId.systemDefault()).toInstant()));
             } else {
-                sgTargetDateSpinner.setValue(Date.from(LocalDate.now().plusYears(1).atStartOfDay(ZoneId.systemDefault()).toInstant())); // Restore default if null
+                sgTargetDateSpinner.setValue(Date.from(LocalDate.now().plusYears(1).atStartOfDay(ZoneId.systemDefault()).toInstant()));
             }
             sgIsActiveCheckBox.setSelected(goalToEdit.isActive());
             
-            sgNameField.setEditable(false); // Optionally prevent editing name/ID field of existing goal
+            sgNameField.setEditable(false);
             if (addGoalButton != null) addGoalButton.setEnabled(false);
             if (saveGoalButton != null) saveGoalButton.setEnabled(true);
 
@@ -1109,18 +1017,18 @@ public class SettingsPanel extends JPanel {
 
     private void saveEditedSavingGoal() {
         if (currentEditingSavingGoal == null) {
-            JOptionPane.showMessageDialog(this, "No saving goal selected for editing.", "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "No goal selected for editing or error in selection.", "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
         SavingGoal updatedGoal = prepareSavingGoalFromInputs(currentEditingSavingGoal);
         if (updatedGoal != null) {
+            Settings settings = settingsService.getSettings();
+            settings.updateSavingGoal(updatedGoal);
             settingsService.saveSettings();
             loadSavingGoals();
             clearSavingGoalForm();
-            currentEditingSavingGoal = null;
-            saveGoalButton.setText("Add New Goal");
-            addGoalButton.setEnabled(true);
-            mainFrame.triggerAnalysisPanelRefresh();
+            if (analysisRefreshCallback != null) analysisRefreshCallback.run();
+            if (homePanelRefreshCallback != null) homePanelRefreshCallback.run();
             JOptionPane.showMessageDialog(this, "Saving goal updated successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
         }
     }
@@ -1128,34 +1036,31 @@ public class SettingsPanel extends JPanel {
     private void deleteSelectedSavingGoal() {
         int selectedRow = savingGoalsTable.getSelectedRow();
         if (selectedRow == -1) {
-            JOptionPane.showMessageDialog(this, "Please select a saving goal to delete.", "Selection Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Please select a saving goal to delete.", "No Selection", JOptionPane.WARNING_MESSAGE);
             return;
         }
+        String goalNameFromTable = (String) savingGoalsTableModel.getValueAt(selectedRow, 0);
 
-        // Assuming the name is in the first column (index 0) and is unique enough to identify the goal.
-        // A more robust way would be to store goal IDs in a hidden column or map row to ID.
-        String goalName = (String) savingGoalsTableModel.getValueAt(selectedRow, 0);
-
-        int confirm = JOptionPane.showConfirmDialog(this,
-                "Are you sure you want to delete the saving goal: '" + goalName + "'?",
-                "Confirm Delete", JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE);
-
+        int confirm = JOptionPane.showConfirmDialog(this, "Are you sure you want to delete the saving goal: " + goalNameFromTable + "?", "Confirm Deletion", JOptionPane.YES_NO_OPTION);
         if (confirm != JOptionPane.YES_OPTION) {
             return;
         }
 
-        Settings settings = mainFrame.getSettings();
-        List<SavingGoal> goals = settings.getSavingGoals();
-        if (selectedRow >= 0 && selectedRow < goals.size()) {
-            SavingGoal goalToDelete = goals.get(selectedRow);
-            settings.removeSavingGoal(goalToDelete.getId());
+        Settings settings = settingsService.getSettings();
+        boolean removed = settings.getSavingGoals().removeIf(goal -> goal.getName().equals(goalNameFromTable) && goal.getId().equals(currentEditingSavingGoal !=null ? currentEditingSavingGoal.getId() : "")); 
+        if (!removed) {
+             removed = settings.getSavingGoals().removeIf(goal -> goal.getName().equals(goalNameFromTable));
+        }
+
+        if (removed) {
             settingsService.saveSettings();
             loadSavingGoals();
             clearSavingGoalForm();
-            mainFrame.triggerAnalysisPanelRefresh();
+            if (analysisRefreshCallback != null) analysisRefreshCallback.run();
+            if (homePanelRefreshCallback != null) homePanelRefreshCallback.run();
             JOptionPane.showMessageDialog(this, "Saving goal deleted successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
         } else {
-            JOptionPane.showMessageDialog(this, "Could not find the saving goal '" + goalName + "' in the current settings. It might have already been deleted.", "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(this, "Could not find or delete the saving goal: " + goalNameFromTable , "Error", JOptionPane.ERROR_MESSAGE);
         }
     }
 
@@ -1163,14 +1068,12 @@ public class SettingsPanel extends JPanel {
         JPanel panel = new JPanel();
         panel.setLayout(new BoxLayout(panel, BoxLayout.Y_AXIS));
         
-        // --- Expense Categories ---
         JPanel expensePanel = new JPanel(new BorderLayout(5, 5));
         expensePanel.setBorder(BorderFactory.createTitledBorder("Expense Categories"));
 
         expenseCategoriesDisplayPanel = new JPanel();
         expenseCategoriesDisplayPanel.setLayout(new BoxLayout(expenseCategoriesDisplayPanel, BoxLayout.Y_AXIS));
         JScrollPane expenseScrollPane = new JScrollPane(expenseCategoriesDisplayPanel);
-        // expenseScrollPane.setPreferredSize(new Dimension(300, 80)); // Example of removing/adjusting fixed size
 
         JPanel addExpensePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         newExpenseCategoryField = new JTextField(15);
@@ -1184,14 +1087,12 @@ public class SettingsPanel extends JPanel {
         expensePanel.add(addExpensePanel, BorderLayout.SOUTH);
         panel.add(expensePanel);
 
-        // --- Income Categories ---
         JPanel incomePanel = new JPanel(new BorderLayout(5, 5));
         incomePanel.setBorder(BorderFactory.createTitledBorder("Income Categories"));
 
         incomeCategoriesDisplayPanel = new JPanel();
         incomeCategoriesDisplayPanel.setLayout(new BoxLayout(incomeCategoriesDisplayPanel, BoxLayout.Y_AXIS));
         JScrollPane incomeScrollPane = new JScrollPane(incomeCategoriesDisplayPanel);
-        // incomeScrollPane.setPreferredSize(new Dimension(300, 80)); // Example of removing/adjusting fixed size
 
         JPanel addIncomePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         newIncomeCategoryField = new JTextField(15);
@@ -1203,29 +1104,20 @@ public class SettingsPanel extends JPanel {
 
         incomePanel.add(incomeScrollPane, BorderLayout.CENTER);
         incomePanel.add(addIncomePanel, BorderLayout.SOUTH);
-        panel.add(Box.createVerticalStrut(10)); // Spacing
+        panel.add(Box.createVerticalStrut(10));
         panel.add(incomePanel);
 
-        refreshCategoryDisplay(); // Initial population
+        refreshCategoryDisplay();
         return panel;
     }
 
     private JPanel createMonthStartDayPanel() {
         JPanel panel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        panel.setBorder(BorderFactory.createTitledBorder("Financial Month Start Day"));
         
         panel.add(new JLabel("Select the day your financial month starts:"));
-        // Allow days from 1 to 28.
         monthStartDaySpinner = new JSpinner(new SpinnerNumberModel(1, 1, 28, 1));
         panel.add(monthStartDaySpinner);
-
-        // Load current setting
-        if (mainFrame != null && mainFrame.getSettings() != null) {
-            monthStartDaySpinner.setValue(mainFrame.getSettings().getMonthStartDay());
-        }
-        
-        // Note: The save for this is handled by the main "Save Changes" button,
-        // which calls saveChanges(), which in turn reads from monthStartDaySpinner.
-        // If a dedicated save button for this setting is needed, it can be added here.
 
         return panel;
     }
@@ -1242,56 +1134,32 @@ public class SettingsPanel extends JPanel {
     }
 
     private void performMonthEndClosingAction() {
-        if (mainFrame == null || mainFrame.getTransactionService() == null || mainFrame.getSettingsService() == null) {
-            JOptionPane.showMessageDialog(this, "Required services are not available.", "Error", JOptionPane.ERROR_MESSAGE);
+        if (settingsService == null || financialCycleService == null) {
+            JOptionPane.showMessageDialog(this, "Required services not available.", "Error", JOptionPane.ERROR_MESSAGE);
             return;
         }
 
-        // Ask for confirmation
         int confirmation = JOptionPane.showConfirmDialog(
             this,
-            "This will close all unclosed financial months up to the last completed one.\n" +
-            "Surplus from these months will be added to your Overall Account Balance.\n\n" +
-            "Do you want to proceed?",
+            "Are you sure you want to perform month-end closing?\n" +
+            "This will process recurring transactions, auto-savings, etc., based on your current settings.\n" +
+            "This action cannot be undone easily.",
             "Confirm Month-End Closing",
-            JOptionPane.YES_NO_OPTION,
-            JOptionPane.QUESTION_MESSAGE
+            JOptionPane.YES_NO_OPTION, JOptionPane.WARNING_MESSAGE
         );
 
-        if (confirmation != JOptionPane.YES_OPTION) {
-            return;
-        }
-
-        try {
-            boolean result = mainFrame.getTransactionService().performMonthEndClosing(mainFrame.getSettingsService());
+        if (confirmation == JOptionPane.YES_OPTION) {
+            boolean result = financialCycleService.performMonthEndClosing();
             if (result) {
-                // Refresh the overall balance display on HomePanel
-                if (mainFrame.getHomePanel() != null) {
-                    mainFrame.getHomePanel().updateOverallAccountBalance();
-                }
-                Settings currentSettings = mainFrame.getSettingsService().getSettings();
-                String lastClosed = currentSettings.getLastMonthClosed();
-                double newOverallBalance = currentSettings.getOverallAccountBalance();
-                JOptionPane.showMessageDialog(this, 
-                    "Month-end closing process completed successfully.\n" +
-                    "Last closed financial month: " + (lastClosed.isEmpty() ? "N/A" : lastClosed) + "\n" +
-                    String.format("New Overall Account Balance: %.2f %s", newOverallBalance, currentSettings.getDefaultCurrency()),
-                    "Month-End Closing Success", 
-                    JOptionPane.INFORMATION_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Month-end closing process completed successfully!", "Month-End Closing Success", JOptionPane.INFORMATION_MESSAGE);
+                if (homePanelRefreshCallback != null) homePanelRefreshCallback.run();
+                if (analysisRefreshCallback != null) analysisRefreshCallback.run();
             } else {
-                JOptionPane.showMessageDialog(this, 
-                    "Month-end closing process completed, but no new months were closed.\n" +
-                    "This might be because all eligible months are already closed, or there was an issue.", 
-                    "Month-End Closing Info", 
-                    JOptionPane.INFORMATION_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Month-end closing process failed or was partially completed. Check logs for details.", "Month-End Closing Failed", JOptionPane.ERROR_MESSAGE);
             }
-        } catch (Exception ex) {
-            JOptionPane.showMessageDialog(this, "An error occurred during month-end closing: " + ex.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
-            ex.printStackTrace();
         }
     }
 
-    // Method to update the JComboBox for Affected Category in Special Dates
     private void updateSpecialDateCategoryComboBox() {
         if (specialDateCategoryComboBox == null || settingsService == null || settingsService.getSettings() == null) {
             return;
@@ -1305,8 +1173,6 @@ public class SettingsPanel extends JPanel {
                 specialDateCategoryComboBox.addItem(category);
             }
         }
-        // Optionally, add income categories too, or decide if special dates only affect expenses.
-        // For now, only expense categories are added based on the label "Affected Category (Expense):"
 
         if (previouslySelected != null) {
             specialDateCategoryComboBox.setSelectedItem(previouslySelected);
@@ -1315,27 +1181,25 @@ public class SettingsPanel extends JPanel {
         }
     }
 
-    // Method to show details of a saving goal in a dialog
     private void showSavingGoalDetails(int rowIndex) {
-        if (mainFrame == null || mainFrame.getSettings() == null || mainFrame.getSettings().getSavingGoals() == null) {
+        if (settingsService == null || settingsService.getSettings() == null || settingsService.getSettings().getSavingGoals() == null) {
+            System.err.println("Settings or saving goals not available for details view.");
             return;
         }
-        List<SavingGoal> goals = mainFrame.getSettings().getSavingGoals();
-        if (rowIndex < 0 || rowIndex >= goals.size()) {
-            // Attempt to find by table data if list is somehow out of sync (less ideal)
-            // This part is tricky if table isn't perfectly mirroring the list order after sorts/filters (not an issue here currently)
-            System.err.println("Row index out of bounds for saving goal details.");
-            return;
+        List<SavingGoal> goals = settingsService.getSettings().getSavingGoals();
+        SavingGoal goalToShow = null;
+        if (rowIndex >= 0 && rowIndex < savingGoalsTableModel.getRowCount()) {
+            String goalNameFromTable = (String) savingGoalsTableModel.getValueAt(rowIndex, 0);
+            for (SavingGoal g : goals) {
+                if (g.getName().equals(goalNameFromTable)) {
+                    goalToShow = g;
+                    break;
+                }
+            }
+        } else {
+             System.err.println("Row index out of bounds for saving goal details based on table model.");
+             return;
         }
-
-        // It's safer to get the goal by matching unique ID or name from the table if the underlying list order might change.
-        // For now, assuming the table row directly corresponds to the list index from loadSavingGoals.
-        // String goalNameFromTable = (String) savingGoalsTableModel.getValueAt(rowIndex, 0);
-        // SavingGoal goalToShow = goals.stream().filter(g -> g.getName().equals(goalNameFromTable)).findFirst().orElse(null);
-        // A more robust way if the list is not guaranteed to be in the same order as the table:
-        // Find the goal by ID from the table. First, ensure an ID column exists or fetch it.
-        // For simplicity, we'll rely on the current loading mechanism where table order matches list order after load.
-        SavingGoal goalToShow = goals.get(rowIndex); // This assumes the table is a direct reflection of the order in `goals` list.
 
         if (goalToShow == null) {
             JOptionPane.showMessageDialog(this, "Could not retrieve details for the selected saving goal.", "Error", JOptionPane.ERROR_MESSAGE);
@@ -1356,5 +1220,121 @@ public class SettingsPanel extends JPanel {
         details.append("</body></html>");
 
         JOptionPane.showMessageDialog(this, details.toString(), "Saving Goal: " + goalToShow.getName(), JOptionPane.INFORMATION_MESSAGE);
+    }
+
+    public boolean isThemeable() {
+        return true;
+    }
+
+    public void applyTheme(Settings settings) {
+        boolean isDark = settings.isDarkModeEnabled();
+        Color backgroundColor = isDark ? new Color(50, 50, 55) : UIManager.getColor("Panel.background");
+        Color foregroundColor = isDark ? Color.LIGHT_GRAY : UIManager.getColor("Label.foreground");
+        Color textFieldBg = isDark ? new Color(60,60,60) : UIManager.getColor("TextField.background");
+        Color tableHeaderBg = isDark ? new Color(70,70,70) : new Color(220,220,220);
+        Color tableHeaderFg = isDark ? Color.WHITE : Color.BLACK;
+        Color tableBg = isDark ? new Color(60,63,65) : Color.WHITE;
+        Color tableFg = isDark ? Color.LIGHT_GRAY : Color.BLACK;
+
+        this.setBackground(backgroundColor);
+
+        if (tabbedPane != null) {
+            tabbedPane.setBackground(backgroundColor);
+            tabbedPane.setForeground(foregroundColor);
+            for (int i = 0; i < tabbedPane.getTabCount(); i++) {
+                Component tabContent = tabbedPane.getComponentAt(i);
+                if (tabContent instanceof JScrollPane) {
+                    JScrollPane scrollPane = (JScrollPane) tabContent;
+                    scrollPane.getViewport().setBackground(backgroundColor);
+                    Component view = scrollPane.getViewport().getView();
+                    if (view instanceof JPanel) {
+                        themeGenericPanel((JPanel) view, settings);
+                    } else {
+                        view.setBackground(backgroundColor);
+                        view.setForeground(foregroundColor);
+                    }
+                } else if (tabContent != null) {
+                    tabContent.setBackground(backgroundColor);
+                    tabContent.setForeground(foregroundColor);
+                }
+            }
+        }
+        
+        if (specialDatesTable != null) {
+            specialDatesTable.setBackground(tableBg);
+            specialDatesTable.setForeground(tableFg);
+            specialDatesTable.getTableHeader().setBackground(tableHeaderBg);
+            specialDatesTable.getTableHeader().setForeground(tableHeaderFg);
+            if(specialDatesTable.getParent() instanceof JViewport){((JViewport)specialDatesTable.getParent()).setBackground(tableBg);}
+        }
+        if (savingGoalsTable != null) {
+            savingGoalsTable.setBackground(tableBg);
+            savingGoalsTable.setForeground(tableFg);
+            savingGoalsTable.getTableHeader().setBackground(tableHeaderBg);
+            savingGoalsTable.getTableHeader().setForeground(tableHeaderFg);
+            if(savingGoalsTable.getParent() instanceof JViewport){((JViewport)savingGoalsTable.getParent()).setBackground(tableBg);}
+        }
+
+        for(Component c : getComponents()){
+            if(c instanceof JPanel){
+                 themeGenericPanel((JPanel) c, settings);
+            }
+        }
+
+        SwingUtilities.updateComponentTreeUI(this);
+        repaint();
+    }
+
+    private void themeGenericPanel(JPanel panel, Settings settings) {
+        boolean isDark = settings.isDarkModeEnabled();
+        Color backgroundColor = isDark ? new Color(50, 50, 55) : UIManager.getColor("Panel.background");
+        Color foregroundColor = isDark ? Color.LIGHT_GRAY : UIManager.getColor("Label.foreground");
+        Color textFieldBg = isDark ? new Color(60,60,60) : UIManager.getColor("TextField.background");
+        Color buttonBg = isDark ? new Color(80,80,80) : UIManager.getColor("Button.background");
+
+        panel.setBackground(backgroundColor);
+        panel.setForeground(foregroundColor);
+
+        for (Component comp : panel.getComponents()) {
+            comp.setForeground(foregroundColor);
+            if (comp instanceof JLabel || comp instanceof JCheckBox) {
+                comp.setBackground(backgroundColor);
+            } else if (comp instanceof JTextField || comp instanceof JSpinner) {
+                comp.setBackground(textFieldBg);
+            } else if (comp instanceof JButton) {
+                comp.setBackground(buttonBg);
+            } else if (comp instanceof JComboBox) {
+                comp.setBackground(textFieldBg);
+            } else if (comp instanceof JPanel) {
+                themeGenericPanel((JPanel) comp, settings);
+            } else if (comp instanceof JScrollPane) {
+                 JScrollPane scroll = (JScrollPane) comp;
+                 scroll.getViewport().setBackground(backgroundColor);
+                 if(scroll.getViewport().getView() != null) {
+                     scroll.getViewport().getView().setBackground(isDark ? new Color(55,55,60) : backgroundColor);
+                     scroll.getViewport().getView().setForeground(foregroundColor);
+                 }
+            }
+        }
+    }
+
+    public void loadSettingsData() {
+        if (settingsService == null) return;
+        Settings settings = settingsService.getSettings();
+        if (settings == null) return;
+
+        if (monthStartDaySpinner != null) {
+            monthStartDaySpinner.setValue(settings.getMonthStartDay());
+        }
+
+        refreshCategoryDisplay();
+
+        loadSpecialDates();
+
+        loadSavingGoals();
+        
+        updateSpecialDateCategoryComboBox();
+
+        System.out.println("SettingsPanel: All settings data loaded into UI.");
     }
 }

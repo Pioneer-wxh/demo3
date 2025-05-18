@@ -14,13 +14,14 @@ public class SettingsService {
     private static final Logger LOGGER = Logger.getLogger(SettingsService.class.getName());
 
     private Settings settings;
-    private final DataService<Settings> dataService;
+    private final SingleItemDataService<Settings> dataService;
 
     /**
      * 构造函数
+     * @param settingsDataService The data service for loading and saving settings.
      */
-    public SettingsService() {
-        this.dataService = new SerializationService<>(Settings.class);
+    public SettingsService(SingleItemDataService<Settings> settingsDataService) {
+        this.dataService = settingsDataService;
         loadSettings();
     }
 

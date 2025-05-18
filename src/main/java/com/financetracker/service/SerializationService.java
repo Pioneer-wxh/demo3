@@ -16,7 +16,7 @@ import java.util.List;
  * 通用的序列化数据服务实现类
  * Provides basic serialization/deserialization for Serializable objects or lists.
  */
-public class SerializationService<T extends Serializable> implements DataService<T> {
+public class SerializationService<T extends Serializable> implements ListDataService<T>, SingleItemDataService<T> {
 
     private final Class<T> itemType;
 

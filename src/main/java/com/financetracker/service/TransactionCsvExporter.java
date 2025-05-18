@@ -7,6 +7,7 @@ import java.io.IOException;
 import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -46,7 +47,7 @@ import com.financetracker.util.PathUtil;
 // 类注释：说明 TransactionCsvExporter 类用于处理交易记录与 CSV 文件之间的转换
 // 提供 CRUD 操作、按月分组导出和备份功能，作为本地 CSV 数据库的接口
 
-public class TransactionCsvExporter {
+public class TransactionCsvExporter implements TransactionDataSource {
     // 定义 TransactionCsvExporter 类，用于管理交易记录的 CSV 文件操作
 
     // Constants for directory/file names are still useful
@@ -84,7 +85,8 @@ public class TransactionCsvExporter {
      * @return 是否成功导出
      */
     // 方法注释：说明该方法用于将交易记录列表导出到 CSV 文件
-    public boolean exportTransactionsToCSV(List<Transaction> transactions) {
+    @Override
+    public boolean saveAllTransactions(List<Transaction> transactions) {
         // 定义方法，接收交易记录列表，返回是否成功导出
         try {
             // 使用 try-catch 块处理可能的 IO 异常
@@ -140,7 +142,8 @@ public class TransactionCsvExporter {
      * @return 读取到的交易记录列表
      */
     // 方法注释：说明该方法用于从 CSV 文件读取交易记录
-    public List<Transaction> importTransactionsFromCSV() {
+    @Override
+    public List<Transaction> loadAllTransactions() {
         // 定义方法，返回从 CSV 文件读取的交易记录列表
         List<Transaction> transactions = new ArrayList<>();
         // 创建空 ArrayList 用于存储交易记录
@@ -218,11 +221,11 @@ public class TransactionCsvExporter {
     // 方法注释：说明该方法用于向 CSV 文件添加单个交易记录
     public boolean addTransactionToCSV(Transaction transaction) {
         // 定义方法，接收 Transaction 对象，返回是否添加成功
-        List<Transaction> transactions = importTransactionsFromCSV();
+        List<Transaction> transactions = loadAllTransactions();
         // 从 CSV 文件读取现有交易记录
         transactions.add(transaction);
         // 将新交易添加到列表
-        return exportTransactionsToCSV(transactions);
+        return saveAllTransactions(transactions);
         // 将更新后的交易列表导出到 CSV 文件，返回是否成功
     }
 
@@ -235,12 +238,12 @@ public class TransactionCsvExporter {
     // 方法注释：说明该方法用于从 CSV 文件删除指定 ID 的交易记录
     public boolean deleteTransactionFromCSV(String transactionId) {
         // 定义方法，接收交易 ID，返回是否删除成功
-        List<Transaction> transactions = importTransactionsFromCSV();
+        List<Transaction> transactions = loadAllTransactions();
         // 从 CSV 文件读取现有交易记录
         boolean removed = transactions.removeIf(t -> t.getId().equals(transactionId));
         // 使用 removeIf 删除 ID 匹配的交易记录，返回是否删除成功
         if (removed) {
-            return exportTransactionsToCSV(transactions);
+            return saveAllTransactions(transactions);
             // 如果删除成功，将更新后的交易列表导出到 CSV 文件
         }
         return false;
@@ -256,7 +259,7 @@ public class TransactionCsvExporter {
     // 方法注释：说明该方法用于批量删除指定 ID 列表的交易记录
     public int batchDeleteTransactionsFromCSV(List<String> transactionIds) {
         // 定义方法，接收交易 ID 列表，返回删除的记录数
-        List<Transaction> transactions = importTransactionsFromCSV();
+        List<Transaction> transactions = loadAllTransactions();
         // 从 CSV 文件读取现有交易记录
         int originalSize = transactions.size();
         // 记录原始交易列表大小
@@ -266,7 +269,7 @@ public class TransactionCsvExporter {
         // 计算删除的记录数
 
         if (removed > 0) {
-            exportTransactionsToCSV(transactions);
+            saveAllTransactions(transactions);
             // 如果删除了记录，将更新后的交易列表导出到 CSV 文件
         }
 
@@ -283,7 +286,7 @@ public class TransactionCsvExporter {
     // 方法注释：说明该方法用于更新 CSV 文件中的交易记录
     public boolean updateTransactionInCSV(Transaction updatedTransaction) {
         // 定义方法，接收更新后的 Transaction 对象，返回是否更新成功
-        List<Transaction> transactions = importTransactionsFromCSV();
+        List<Transaction> transactions = loadAllTransactions();
         // 从 CSV 文件读取现有交易记录
         boolean updated = false;
         // 标记是否找到并更新了交易
@@ -302,7 +305,7 @@ public class TransactionCsvExporter {
         }
 
         if (updated) {
-            return exportTransactionsToCSV(transactions);
+            return saveAllTransactions(transactions);
             // 如果更新成功，将更新后的交易列表导出到 CSV 文件
         }
         return false;
@@ -314,11 +317,11 @@ public class TransactionCsvExporter {
      * 
      * @return 文件是否存在
      */
-    // 方法注释：说明该方法用于检查 CSV 文件是否存在
-    public boolean csvFileExists() {
-        // 定义方法，返回 CSV 文件是否存在
-        return Files.exists(getCsvFilePath());
-        // 使用 Files.exists 检查指定路径的文件是否存在
+    // 方法注释：检查CSV文件是否存在
+    @Override
+    public boolean dataSourceExists() {
+        Path path = getCsvFilePath();
+        return Files.exists(path);
     }
 
     /**
@@ -329,7 +332,7 @@ public class TransactionCsvExporter {
     // 方法注释：说明该方法用于创建 CSV 文件的备份
     public boolean createCsvBackup() {
         // 定义方法，返回是否成功创建备份
-        if (!csvFileExists()) {
+        if (!dataSourceExists()) {
             // 检查 CSV 文件是否存在
             return false;
             // 如果文件不存在，返回 false
@@ -501,6 +504,58 @@ public class TransactionCsvExporter {
             return exportTransactionsToFile(transactions, exportPath);
         } catch (IOException e) {
             System.err.println("创建导出目录时出错 '" + PathUtil.getExportDir().toString() + "': " + e.getMessage()); // Use PathUtil here
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    /**
+     * Exports a list of transactions to a specified CSV file path.
+     *
+     * @param transactions The list of transactions to export.
+     * @param filePathString The absolute path of the CSV file to write to.
+     * @return true if export was successful, false otherwise.
+     */
+    public boolean exportTransactionsToPath(List<Transaction> transactions, String filePathString) {
+        if (filePathString == null || filePathString.trim().isEmpty()) {
+            System.err.println("Export path cannot be null or empty.");
+            return false;
+        }
+        Path path = Paths.get(filePathString);
+
+        try {
+            Files.createDirectories(path.getParent()); // Ensure parent directory exists
+            try (BufferedWriter writer = Files.newBufferedWriter(path);
+                 CSVPrinter csvPrinter = new CSVPrinter(writer, CSVFormat.DEFAULT.builder().setHeader(CSV_HEADERS).build())) {
+                
+                // Optional: Sort transactions before exporting, e.g., by date
+                transactions.sort(Comparator.comparing(Transaction::getDate).reversed());
+
+                for (Transaction transaction : transactions) {
+                    csvPrinter.printRecord(
+                            transaction.getId(),
+                            transaction.getDate().format(DATE_FORMATTER),
+                            transaction.getAmount(),
+                            transaction.getDescription(),
+                            transaction.getCategory(),
+                            transaction.getParticipant(),
+                            transaction.getNotes(),
+                            transaction.isExpense()
+                    );
+                }
+                csvPrinter.flush();
+                return true;
+            } catch (IOException e) {
+                System.err.println("Error writing to CSV file " + filePathString + ": " + e.getMessage());
+                e.printStackTrace();
+                return false;
+            }
+        } catch (IOException e) {
+            System.err.println("Error creating parent directories for " + filePathString + ": " + e.getMessage());
+            e.printStackTrace();
+            return false;
+        } catch (Exception e) {
+            System.err.println("An unexpected error occurred during export to " + filePathString + ": " + e.getMessage());
             e.printStackTrace();
             return false;
         }

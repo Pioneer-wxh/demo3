@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 import com.financetracker.model.Settings;
 import com.financetracker.model.Transaction;
 import com.financetracker.service.BudgetAdjustmentService;
+import com.financetracker.service.FinancialCycleService;
 import com.financetracker.service.SettingsService;
 import com.financetracker.service.TransactionService;
 
@@ -23,11 +24,13 @@ public class AiAssistantService {
     private final DeepSeekAiService aiService;
     private final SettingsService settingsService;
     private final BudgetAdjustmentService budgetAdjustmentService;
+    private final FinancialCycleService financialCycleService;
     
-    public AiAssistantService(SettingsService settingsService) {
+    public AiAssistantService(SettingsService settingsService, FinancialCycleService financialCycleService) {
         this.aiService = new DeepSeekAiService();
         this.settingsService = settingsService;
         this.budgetAdjustmentService = new BudgetAdjustmentService(settingsService);
+        this.financialCycleService = financialCycleService;
     }
     
     /**
@@ -414,7 +417,7 @@ public class AiAssistantService {
             // It's important that TransactionService is capable of being called multiple times for the same month
             // without creating duplicate transactions, or we need a flag here.
             // For now, we assume it handles this or it's acceptable for it to run once per session/major action.
-            boolean savingsProcessed = transactionService.processMonthlySavingsContributions(settingsService, currentMonthToProcess, savingsTransactionDay, "Savings");
+            boolean savingsProcessed = financialCycleService.processMonthlySavingsContributions(currentMonthToProcess, savingsTransactionDay, "Savings");
             if (!savingsProcessed) {
                 // Log or handle the error, though the method itself logs errors.
                 System.err.println("AiAssistantService: Processing monthly savings contributions might have failed for " + currentMonthToProcess);
@@ -469,7 +472,7 @@ public class AiAssistantService {
         if (settings != null) {
             YearMonth currentMonthToProcess = YearMonth.now(); // Process for current month
             int savingsTransactionDay = settings.getBudgetStartDay() > 0 ? settings.getBudgetStartDay() : 1; // Default to 1 if not set
-            boolean savingsProcessed = transactionService.processMonthlySavingsContributions(settingsService, currentMonthToProcess, savingsTransactionDay, "Savings");
+            boolean savingsProcessed = financialCycleService.processMonthlySavingsContributions(currentMonthToProcess, savingsTransactionDay, "Savings");
             if (!savingsProcessed) {
                 System.err.println("AiAssistantService: Processing monthly savings contributions might have failed for " + currentMonthToProcess + " before generating next month budget.");
             }
@@ -574,7 +577,7 @@ public class AiAssistantService {
         if (settings != null) {
             YearMonth currentMonthToProcess = YearMonth.now();
             int savingsTransactionDay = settings.getBudgetStartDay() > 0 ? settings.getBudgetStartDay() : 1;
-            boolean savingsProcessed = transactionService.processMonthlySavingsContributions(settingsService, currentMonthToProcess, savingsTransactionDay, "Savings");
+            boolean savingsProcessed = financialCycleService.processMonthlySavingsContributions(currentMonthToProcess, savingsTransactionDay, "Savings");
             if (!savingsProcessed) {
                  messageConsumer.accept("[Warning] Error processing current month savings goal. Analysis may not include latest savings transactions.\n");
             }

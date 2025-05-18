@@ -1,19 +1,42 @@
 package com.financetracker.gui;
 
-import javax.swing.*;
-import java.awt.*;
-import java.awt.event.ActionEvent;
+import java.awt.BorderLayout;
+import java.awt.Color;
+import java.awt.Component;
+import java.awt.Dimension;
+import java.awt.FlowLayout;
+import java.awt.Font;
+import java.awt.GridBagConstraints;
+import java.awt.GridBagLayout;
+import java.awt.Insets;
 import java.awt.event.ActionListener;
-import com.financetracker.model.Settings;
-import com.financetracker.model.SavingGoal;
 import java.util.List;
+import java.util.stream.Collectors;
+
+import javax.swing.BorderFactory;
+import javax.swing.Box;
+import javax.swing.BoxLayout;
+import javax.swing.JButton;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JProgressBar;
+import javax.swing.JScrollPane;
+import javax.swing.UIManager;
+
+import com.financetracker.model.SavingGoal;
+import com.financetracker.model.Settings;
+import com.financetracker.service.SettingsService;
+import com.financetracker.service.TransactionService;
 
 /**
  * The home panel that serves as the main menu of the application.
  */
 public class HomePanel extends JPanel {
     
-    private MainFrame mainFrame;
+    private TransactionService transactionService;
+    private SettingsService settingsService;
+    private ActionListener panelNavigationListener;
+
     private JLabel remainingBalanceLabel;
     private JPanel savingGoalsProgressPanel;
     private JLabel noGoalsLabel;
@@ -22,10 +45,14 @@ public class HomePanel extends JPanel {
     /**
      * Constructor for HomePanel.
      * 
-     * @param mainFrame The main frame
+     * @param transactionService The transaction service
+     * @param settingsService The settings service
+     * @param panelNavigationListener The panel navigation listener
      */
-    public HomePanel(MainFrame mainFrame) {
-        this.mainFrame = mainFrame;
+    public HomePanel(TransactionService transactionService, SettingsService settingsService, ActionListener panelNavigationListener) {
+        this.transactionService = transactionService;
+        this.settingsService = settingsService;
+        this.panelNavigationListener = panelNavigationListener;
         initComponents();
     }
     
@@ -114,8 +141,7 @@ public class HomePanel extends JPanel {
         // Add footer to panel
         add(footerPanel, BorderLayout.SOUTH);
         
-        updateSavingGoalsProgress(); // Initial call to populate goals
-        updateOverallAccountBalance(); // Initial call to populate overall balance
+        refreshData(); // Initial call to populate data
     }
     
     /**
@@ -125,15 +151,16 @@ public class HomePanel extends JPanel {
      * @param panelName The name of the panel to show when the button is clicked
      * @return The created button
      */
-    private JButton createMenuButton(String text, String panelName) {
+    private JButton createMenuButton(String text, String panelNameCommand) {
         JButton button = new JButton(text);
         button.setFont(new Font("Arial", Font.PLAIN, 16));
         button.setPreferredSize(new Dimension(300, 60));
+        button.setActionCommand(panelNameCommand); // Set action command for the listener
         
-        button.addActionListener(new ActionListener() {
-            @Override
-            public void actionPerformed(ActionEvent e) {
-                mainFrame.showPanel(panelName);
+        button.addActionListener(e -> {
+            if (panelNavigationListener != null) {
+                // Forward the action event (already contains the command)
+                panelNavigationListener.actionPerformed(e);
             }
         });
         
@@ -141,38 +168,38 @@ public class HomePanel extends JPanel {
     }
 
     /**
+     * Consolidated refresh method
+     */
+    public void refreshData() {
+        updateRemainingBalance();
+        updateSavingGoalsProgress();
+        updateOverallAccountBalance();
+    }
+
+    /**
      * Updates the remaining balance display.
      * Called when the panel is shown or relevant data changes.
      */
     public void updateRemainingBalance() {
-        if (mainFrame == null || mainFrame.getTransactionService() == null || mainFrame.getSettingsService() == null) {
+        if (transactionService == null || settingsService == null) {
             remainingBalanceLabel.setText("Remaining Balance: Error - Services not available");
             return;
         }
-
-        Settings settings = mainFrame.getSettingsService().getSettings();
+        Settings settings = settingsService.getSettings();
         if (settings == null) {
             remainingBalanceLabel.setText("Remaining Balance: Error - Settings not available");
             return;
         }
-
         try {
-            double balance = mainFrame.getTransactionService().calculateRemainingBalanceForCurrentFinancialMonth(settings);
+            double balance = transactionService.calculateRemainingBalanceForCurrentFinancialMonth(settings);
             String balanceText = String.format("Remaining Balance (Current Financial Month): %.2f %s", balance, settings.getDefaultCurrency());
             remainingBalanceLabel.setText(balanceText);
-            if (balance < 0) {
-                remainingBalanceLabel.setForeground(Color.RED);
-            } else {
-                remainingBalanceLabel.setForeground(Color.BLUE); // Or UIManager.getColor("Label.foreground") for default
-            }
+            remainingBalanceLabel.setForeground(balance < 0 ? Color.RED : Color.BLUE); 
         } catch (Exception e) {
-            System.err.println("Error calculating or displaying remaining balance: " + e.getMessage());
-            e.printStackTrace();
+            System.err.println("Error calculating remaining balance: " + e.getMessage());
             remainingBalanceLabel.setText("Remaining Balance: Error");
             remainingBalanceLabel.setForeground(Color.RED);
         }
-        updateSavingGoalsProgress(); // Update goals when balance updates
-        updateOverallAccountBalance(); // Update overall balance as well
     }
 
     /**
@@ -180,50 +207,33 @@ public class HomePanel extends JPanel {
      * Called when the panel is shown or relevant data changes.
      */
     public void updateSavingGoalsProgress() {
-        if (mainFrame == null || mainFrame.getSettingsService() == null || savingGoalsProgressPanel == null) {
-            if (noGoalsLabel != null && savingGoalsProgressPanel != null) {
-                savingGoalsProgressPanel.removeAll();
-                noGoalsLabel.setText("Error: Services not available for goals.");
-                savingGoalsProgressPanel.add(noGoalsLabel);
-                savingGoalsProgressPanel.revalidate();
-                savingGoalsProgressPanel.repaint();
-            }
+        if (settingsService == null || savingGoalsProgressPanel == null) {
+            // Simplified error display
+            if (noGoalsLabel != null) noGoalsLabel.setText("Error: Service unavailable for goals.");
             return;
         }
-
-        Settings settings = mainFrame.getSettingsService().getSettings();
+        Settings settings = settingsService.getSettings();
         if (settings == null || settings.getSavingGoals() == null) {
-            if (noGoalsLabel != null && savingGoalsProgressPanel != null) {
-                savingGoalsProgressPanel.removeAll();
-                noGoalsLabel.setText("Error: Settings or goals not available.");
-                savingGoalsProgressPanel.add(noGoalsLabel);
-                savingGoalsProgressPanel.revalidate();
-                savingGoalsProgressPanel.repaint();
-            }
+            if (noGoalsLabel != null) noGoalsLabel.setText("Error: Settings or goals unavailable.");
             return;
         }
 
-        savingGoalsProgressPanel.removeAll(); // Clear previous entries
-
+        savingGoalsProgressPanel.removeAll();
         List<SavingGoal> activeGoals = settings.getSavingGoals().stream()
                                            .filter(SavingGoal::isActive)
                                            .filter(g -> !g.isCompleted())
-                                           .collect(java.util.stream.Collectors.toList());
+                                           .collect(Collectors.toList());
 
         if (activeGoals.isEmpty()) {
             noGoalsLabel.setText("No active saving goals to display.");
             savingGoalsProgressPanel.add(noGoalsLabel);
         } else {
             for (SavingGoal goal : activeGoals) {
-                JPanel goalEntryPanel = new JPanel(new BorderLayout(10, 2)); // Gap between components
+                JPanel goalEntryPanel = new JPanel(new BorderLayout(10, 2));
                 goalEntryPanel.setBorder(BorderFactory.createEmptyBorder(5, 5, 5, 5));
-
-                String goalDisplayName = goal.getName();
-                if (goalDisplayName == null || goalDisplayName.trim().isEmpty()) {
-                    goalDisplayName = "(Unnamed Goal)"; // Placeholder for unnamed goals
-                }
+                String goalDisplayName = goal.getName() == null || goal.getName().trim().isEmpty() ? "(Unnamed Goal)" : goal.getName();
                 JLabel goalNameLabel = new JLabel(goalDisplayName); 
-                goalNameLabel.setFont(new Font("SimSun", Font.BOLD, 14)); // Try SimSun font for Chinese characters
+                goalNameLabel.setFont(new Font("SimSun", Font.BOLD, 14));
                 goalEntryPanel.add(goalNameLabel, BorderLayout.NORTH);
 
                 JProgressBar progressBar = new JProgressBar(0, 100);
@@ -233,18 +243,13 @@ public class HomePanel extends JPanel {
                 goalEntryPanel.add(progressBar, BorderLayout.CENTER);
 
                 String progressText = String.format("Saved: %.2f / Target: %.2f %s",
-                                                    goal.getCurrentAmount(),
-                                                    goal.getTargetAmount(),
-                                                    settings.getDefaultCurrency());
+                                                    goal.getCurrentAmount(), goal.getTargetAmount(), settings.getDefaultCurrency());
                 JLabel progressDetailsLabel = new JLabel(progressText);
                 progressDetailsLabel.setFont(new Font("Arial", Font.PLAIN, 12));
                 goalEntryPanel.add(progressDetailsLabel, BorderLayout.SOUTH);
-                
                 goalEntryPanel.setMaximumSize(new Dimension(Integer.MAX_VALUE, goalEntryPanel.getPreferredSize().height));
-
-
                 savingGoalsProgressPanel.add(goalEntryPanel);
-                savingGoalsProgressPanel.add(Box.createVerticalStrut(5)); // Spacing between goals
+                savingGoalsProgressPanel.add(Box.createVerticalStrut(5));
             }
         }
         savingGoalsProgressPanel.revalidate();
@@ -255,31 +260,57 @@ public class HomePanel extends JPanel {
      * Updates the overall account balance display.
      */
     public void updateOverallAccountBalance() {
-        if (mainFrame == null || mainFrame.getSettingsService() == null) {
-            overallAccountBalanceLabel.setText("Overall Account Balance: Error - Services not available");
+        if (settingsService == null) {
+            overallAccountBalanceLabel.setText("Overall Account Balance: Error - Service not available");
             return;
         }
-
-        Settings settings = mainFrame.getSettingsService().getSettings();
+        Settings settings = settingsService.getSettings();
         if (settings == null) {
             overallAccountBalanceLabel.setText("Overall Account Balance: Error - Settings not available");
             return;
         }
+        String balanceText = String.format("Overall Account Balance: %.2f %s", settings.getOverallAccountBalance(), settings.getDefaultCurrency());
+        overallAccountBalanceLabel.setText(balanceText);
+        overallAccountBalanceLabel.setForeground(settings.getOverallAccountBalance() < 0 ? Color.RED : Color.GREEN); // Green for overall positive
+    }
 
-        try {
-            double overallBalance = settings.getOverallAccountBalance();
-            String balanceText = String.format("Overall Account Balance: %.2f %s", overallBalance, settings.getDefaultCurrency());
-            overallAccountBalanceLabel.setText(balanceText);
-            if (overallBalance < 0) {
-                overallAccountBalanceLabel.setForeground(Color.RED);
-            } else {
-                overallAccountBalanceLabel.setForeground(new Color(0, 100, 0)); // Dark Green
+    /**
+     * Applies theme specific colors or styles to the panel.
+     * @param settings The application settings containing theme information.
+     */
+    public void applyTheme(Settings settings) {
+        boolean isDark = settings.isDarkModeEnabled();
+        // Example: Set panel background based on theme
+        setBackground(isDark ? new Color(45, 45, 45) : UIManager.getColor("Panel.background"));
+        
+        // Update label colors that might have been set explicitly (e.g., balance labels)
+        if (remainingBalanceLabel != null && remainingBalanceLabel.getText().startsWith("Remaining Balance:")){
+            // Re-evaluate color based on current value and theme
+            // This part needs careful handling if balance text itself indicates error.
+             try {
+                double balance = transactionService.calculateRemainingBalanceForCurrentFinancialMonth(settings);
+                remainingBalanceLabel.setForeground(balance < 0 ? Color.RED : (isDark? new Color(152,195,121): Color.BLUE));
+            } catch (Exception e) {
+                remainingBalanceLabel.setForeground(Color.RED); // Error state
             }
-        } catch (Exception e) {
-            System.err.println("Error displaying overall account balance: " + e.getMessage());
-            e.printStackTrace();
-            overallAccountBalanceLabel.setText("Overall Account Balance: Error");
-            overallAccountBalanceLabel.setForeground(Color.RED);
         }
+        if (overallAccountBalanceLabel != null && overallAccountBalanceLabel.getText().startsWith("Overall Account Balance:")){
+            overallAccountBalanceLabel.setForeground(settings.getOverallAccountBalance() < 0 ? Color.RED : (isDark? new Color(152,195,121): Color.GREEN));
+        }
+        
+        // You might need to update fonts/backgrounds of other components (buttons, text areas in goals) if they don't pick up UIManager changes well.
+        // For instance, if JProgressBar in saving goals needs specific dark theme colors:
+        if (savingGoalsProgressPanel != null) {
+            for(Component comp : savingGoalsProgressPanel.getComponents()){
+                if(comp instanceof JPanel){ // goalEntryPanel
+                    comp.setBackground(isDark ? new Color(55,55,55) : UIManager.getColor("Panel.background"));
+                    for(Component subComp : ((JPanel)comp).getComponents()){
+                        if(subComp instanceof JLabel) subComp.setForeground(isDark ? Color.LIGHT_GRAY : Color.BLACK);
+                        if(subComp instanceof JProgressBar) { /* UIManager should handle this, but can override */ }
+                    }
+                }
+            }
+        }
+        // Propagate theme to children if they have their own applyTheme methods
     }
 }
