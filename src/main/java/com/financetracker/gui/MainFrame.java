@@ -17,6 +17,7 @@ import javax.swing.UIManager;
 
 import com.financetracker.model.Settings;
 import com.financetracker.service.BudgetAdjustmentService;
+import com.financetracker.service.BudgetForecastService;
 import com.financetracker.service.CsvBatchImporter;
 import com.financetracker.service.FinancialCycleService;
 import com.financetracker.service.SerializationService;
@@ -46,6 +47,7 @@ public class MainFrame extends JFrame {
     private BudgetAdjustmentService budgetAdjustmentService;
     private TransactionService transactionService;
     private FinancialCycleService financialCycleService;
+    private BudgetForecastService budgetForecastService;
     private CsvBatchImporter csvBatchImporter;
     private TransactionCsvExporter csvExporter;
 
@@ -58,9 +60,10 @@ public class MainFrame extends JFrame {
     private static final Color PRIMARY_DARK_COLOR = new Color(31, 97, 141); // 可能可以移除，如果AppNavigationBar自己管理悬停
     private static final Color ACCENT_COLOR = new Color(26, 188, 156); // 可能可以移除，如果AppNavigationBar自己管理激活状态
 
-    // Theme colors used by MainFrame for its components if not solely relying on UIManager
+    // Theme colors used by MainFrame for its components if not solely relying on
+    // UIManager
     private static final Color MF_PRIMARY_COLOR = new Color(41, 128, 185); // Example
-    private static final Color MF_ACCENT_COLOR = new Color(26, 188, 156);  // Example
+    private static final Color MF_ACCENT_COLOR = new Color(26, 188, 156); // Example
     private static final Color MF_PRIMARY_DARK_COLOR = new Color(31, 97, 141); // Example
 
     /**
@@ -71,10 +74,10 @@ public class MainFrame extends JFrame {
         // Correctly instantiate SerializationService and pass it to SettingsService
         SerializationService<Settings> settingsDataServ = new SerializationService<>(Settings.class);
         settingsService = new SettingsService(settingsDataServ);
-        settings = settingsService.getSettings(); 
+        settings = settingsService.getSettings();
 
         // 2. Initialize TransactionDataSource (TransactionCsvExporter)
-        transactionDataSource = new TransactionCsvExporter(); 
+        transactionDataSource = new TransactionCsvExporter();
 
         // 3. Initialize TransactionService
         transactionService = new TransactionService(transactionDataSource, settings);
@@ -83,12 +86,17 @@ public class MainFrame extends JFrame {
         specialDateService = new SpecialDateService(settingsService);
         budgetAdjustmentService = new BudgetAdjustmentService(settingsService);
         financialCycleService = new FinancialCycleService(transactionService, settingsService);
-        
-        // 5. Initialize CSV Importer and Exporter instances
-        csvBatchImporter = new CsvBatchImporter(transactionService, settings); 
+        budgetForecastService = new BudgetForecastService(transactionService, settingsService);
+
+        // 5. 设置FinancialCycleService与BudgetForecastService的关联
+        financialCycleService.setBudgetForecastService(budgetForecastService);
+
+        // 6. Initialize CSV Importer and Exporter instances
+        csvBatchImporter = new CsvBatchImporter(transactionService, settings);
         if (!(transactionDataSource instanceof TransactionCsvExporter)) {
-             System.err.println("Warning: transactionDataSource is not an instance of TransactionCsvExporter. CSV export features in TransactionPanel might fail or use a new instance.");
-             this.csvExporter = new TransactionCsvExporter(); 
+            System.err.println(
+                    "Warning: transactionDataSource is not an instance of TransactionCsvExporter. CSV export features in TransactionPanel might fail or use a new instance.");
+            this.csvExporter = new TransactionCsvExporter();
         } else {
             this.csvExporter = (TransactionCsvExporter) transactionDataSource;
         }
@@ -111,11 +119,21 @@ public class MainFrame extends JFrame {
             // Determine button text for status update based on panelName (command)
             // This mapping should ideally be less fragile.
             switch (panelName) {
-                case "home": buttonText = "首页"; break;
-                case "transactions": buttonText = "交易记录"; break;
-                case "analysis": buttonText = "分析"; break;
-                case "settings": buttonText = "设置"; break;
-                default: buttonText = panelName; break;
+                case "home":
+                    buttonText = "首页";
+                    break;
+                case "transactions":
+                    buttonText = "交易记录";
+                    break;
+                case "analysis":
+                    buttonText = "分析";
+                    break;
+                case "settings":
+                    buttonText = "设置";
+                    break;
+                default:
+                    buttonText = panelName;
+                    break;
             }
             showPanel(panelName);
             if (appStatusBar != null) {
@@ -124,7 +142,6 @@ public class MainFrame extends JFrame {
         };
         appNavigationBar = new AppNavigationBar(panelSwitcher);
         mainPanel.add(appNavigationBar, BorderLayout.NORTH);
-
 
         // Set up the content panel with card layout
         cardLayout = new CardLayout();
@@ -138,17 +155,22 @@ public class MainFrame extends JFrame {
 
         // Initialize panels
         homePanel = new HomePanel(transactionService, settingsService, panelSwitcher); // Pass services and listener
-        transactionPanel = new TransactionPanel(transactionService, settingsService, panelSwitcher, csvBatchImporter, csvExporter);
-        analysisPanel = new AnalysisPanel(transactionService, settingsService, specialDateService, budgetAdjustmentService, financialCycleService, panelSwitcher);
+        transactionPanel = new TransactionPanel(transactionService, settingsService, panelSwitcher, csvBatchImporter,
+                csvExporter);
+        analysisPanel = new AnalysisPanel(transactionService, settingsService, specialDateService,
+                budgetAdjustmentService, financialCycleService, budgetForecastService, panelSwitcher);
         settingsPanel = new SettingsPanel(
-            settingsService,
-            specialDateService,
-            budgetAdjustmentService,
-            financialCycleService,
-            panelSwitcher,
-            this::refreshCategoryLists,      // globalCategoryRefreshCallback
-            this::triggerAnalysisPanelRefresh, // analysisRefreshCallback
-            () -> { if (homePanel != null) homePanel.refreshData(); } // homePanelRefreshCallback
+                settingsService,
+                specialDateService,
+                budgetAdjustmentService,
+                financialCycleService,
+                panelSwitcher,
+                this::refreshCategoryLists, // globalCategoryRefreshCallback
+                this::triggerAnalysisPanelRefresh, // analysisRefreshCallback
+                () -> {
+                    if (homePanel != null)
+                        homePanel.refreshData();
+                } // homePanelRefreshCallback
         );
 
         // Add panels to the content panel
@@ -161,7 +183,7 @@ public class MainFrame extends JFrame {
         cardLayout.show(contentPanel, "home");
         appNavigationBar.updateNavigationButtons("home"); // 更新导航栏按钮状态
         if (appStatusBar != null) {
-             appStatusBar.showTemporaryMessage("欢迎使用个人财务跟踪器"); // Initial message
+            appStatusBar.showTemporaryMessage("欢迎使用个人财务跟踪器"); // Initial message
         }
 
         // Add the main panel to the frame
@@ -183,11 +205,13 @@ public class MainFrame extends JFrame {
 
     /**
      * 应用主题到应用程序组件。
-     * This method might need to be updated to interact with AppNavigationBar's theme application.
+     * This method might need to be updated to interact with AppNavigationBar's
+     * theme application.
      */
     private void applyTheme() {
         if (settings == null) {
-            // Fallback or log error if settings are not loaded - this shouldn't happen if constructor is correct
+            // Fallback or log error if settings are not loaded - this shouldn't happen if
+            // constructor is correct
             System.err.println("MainFrame.applyTheme: Settings not loaded!");
             return;
         }
@@ -195,32 +219,37 @@ public class MainFrame extends JFrame {
         // 1. Apply global L&F theme settings (Dark/Light mode UIManager properties)
         LookAndFeelManager.applyTheme(this.settings);
 
-        // 2. Apply theme to specific custom components if they don't fully adopt UIManager changes
-        // These colors might come from a centralized Theme object or constants based on settings.isDarkModeEnabled()
-        Color navPrimary = settings.isDarkModeEnabled() ? new Color(50,50,50) : MF_PRIMARY_COLOR;
-        Color navDark = settings.isDarkModeEnabled() ? new Color(30,30,30) : MF_PRIMARY_DARK_COLOR;
-        Color navAccent = settings.isDarkModeEnabled() ? new Color(0,150,136) : MF_ACCENT_COLOR;
+        // 2. Apply theme to specific custom components if they don't fully adopt
+        // UIManager changes
+        // These colors might come from a centralized Theme object or constants based on
+        // settings.isDarkModeEnabled()
+        Color navPrimary = settings.isDarkModeEnabled() ? new Color(50, 50, 50) : MF_PRIMARY_COLOR;
+        Color navDark = settings.isDarkModeEnabled() ? new Color(30, 30, 30) : MF_PRIMARY_DARK_COLOR;
+        Color navAccent = settings.isDarkModeEnabled() ? new Color(0, 150, 136) : MF_ACCENT_COLOR;
 
         if (appNavigationBar != null) {
             appNavigationBar.applyThemeColors(navPrimary, navDark, navAccent);
         }
 
         if (appStatusBar != null) {
-            Color statusBarBg = settings.isDarkModeEnabled() ? new Color(45,45,45) : UIManager.getColor("Panel.background");
-            Color statusBarFg = settings.isDarkModeEnabled() ? Color.LIGHT_GRAY : UIManager.getColor("Label.foreground");
-            Color statusBarBorder = settings.isDarkModeEnabled() ? new Color(80,80,80) : Color.LIGHT_GRAY;
+            Color statusBarBg = settings.isDarkModeEnabled() ? new Color(45, 45, 45)
+                    : UIManager.getColor("Panel.background");
+            Color statusBarFg = settings.isDarkModeEnabled() ? Color.LIGHT_GRAY
+                    : UIManager.getColor("Label.foreground");
+            Color statusBarBorder = settings.isDarkModeEnabled() ? new Color(80, 80, 80) : Color.LIGHT_GRAY;
             appStatusBar.applyThemeColors(statusBarBg, statusBarFg, statusBarBorder);
         }
-        
-        // 3. Theme content panels (example - each panel might need its own applyTheme method)
+
+        // 3. Theme content panels (example - each panel might need its own applyTheme
+        // method)
         if (contentPanel != null) {
             // Example: Set background for the contentPanel itself based on theme
-            contentPanel.setBackground(settings.isDarkModeEnabled() ? new Color(40,40,40) : Color.WHITE);
+            contentPanel.setBackground(settings.isDarkModeEnabled() ? new Color(40, 40, 40) : Color.WHITE);
 
             for (Component comp : contentPanel.getComponents()) {
                 // General theming for JPanels
-                if (comp instanceof JPanel && !(comp instanceof AppNavigationBar || comp instanceof AppStatusBar)) { 
-                     comp.setBackground(settings.isDarkModeEnabled() ? new Color(50,50,50) : new Color(230,230,230));
+                if (comp instanceof JPanel && !(comp instanceof AppNavigationBar || comp instanceof AppStatusBar)) {
+                    comp.setBackground(settings.isDarkModeEnabled() ? new Color(50, 50, 50) : new Color(230, 230, 230));
                 }
                 // Call specific applyTheme for custom panels
                 if (comp instanceof HomePanel) {
@@ -238,34 +267,44 @@ public class MainFrame extends JFrame {
                 }
             }
         }
-        
-        // 4. Theme the MainFrame itself if needed (e.g., background of JFrame's content pane)
-        // getContentPane().setBackground(settings.isDarkModeEnabled() ? new Color(30,30,30) : new Color(220,220,220));
-        
-        // 5. IMPORTANT: Update the entire component tree to reflect L&F and UIManager changes.
+
+        // 4. Theme the MainFrame itself if needed (e.g., background of JFrame's content
+        // pane)
+        // getContentPane().setBackground(settings.isDarkModeEnabled() ? new
+        // Color(30,30,30) : new Color(220,220,220));
+
+        // 5. IMPORTANT: Update the entire component tree to reflect L&F and UIManager
+        // changes.
         SwingUtilities.updateComponentTreeUI(this);
         repaint(); // Additional repaint just in case
     }
 
     /**
      * Shows the specified panel in the CardLayout.
+     * 
      * @param panelName the name of the panel to show
      */
     public void showPanel(String panelName) {
         if (cardLayout != null && contentPanel != null && panelName != null) {
             cardLayout.show(contentPanel, panelName);
-            if (appNavigationBar != null) appNavigationBar.updateNavigationButtons(panelName);
-            
+            if (appNavigationBar != null)
+                appNavigationBar.updateNavigationButtons(panelName);
+
             // Panel-specific refresh/update logic when shown
-            if ("home".equals(panelName) && homePanel != null) homePanel.refreshData();
-            if ("transactions".equals(panelName) && transactionPanel != null) transactionPanel.loadTransactions();
-            if ("analysis".equals(panelName) && analysisPanel != null) analysisPanel.refreshAllAnalysisData();
-            if ("settings".equals(panelName) && settingsPanel != null) settingsPanel.loadSettingsData();
+            if ("home".equals(panelName) && homePanel != null)
+                homePanel.refreshData();
+            if ("transactions".equals(panelName) && transactionPanel != null)
+                transactionPanel.loadTransactions();
+            if ("analysis".equals(panelName) && analysisPanel != null)
+                analysisPanel.refreshAllAnalysisData();
+            if ("settings".equals(panelName) && settingsPanel != null)
+                settingsPanel.loadSettingsData();
         }
     }
 
     // Getter and Setter methods for services and panels (from outline)
-    // These remain for now, but their usage by child panels should be reviewed later
+    // These remain for now, but their usage by child panels should be reviewed
+    // later
     // to promote loose coupling (e.g., by passing services via constructors).
 
     public Settings getSettings() {
@@ -274,17 +313,22 @@ public class MainFrame extends JFrame {
 
     public void setSettings(Settings settings) {
         this.settings = settings;
-        applyTheme(); 
-        
-        if (transactionPanel != null) transactionPanel.loadTransactions(); // Refresh transactions as currency/date format might change
-        if (analysisPanel != null) analysisPanel.refreshAllAnalysisData(); // Analysis might depend on new settings
-        if (settingsPanel != null) settingsPanel.loadSettingsData(); // Settings panel UI should reflect new settings
-        if (homePanel != null) homePanel.refreshData(); // Home panel might depend on new settings
+        applyTheme();
 
-        if(appStatusBar != null){
+        if (transactionPanel != null)
+            transactionPanel.loadTransactions(); // Refresh transactions as currency/date format might change
+        if (analysisPanel != null)
+            analysisPanel.refreshAllAnalysisData(); // Analysis might depend on new settings
+        if (settingsPanel != null)
+            settingsPanel.loadSettingsData(); // Settings panel UI should reflect new settings
+        if (homePanel != null)
+            homePanel.refreshData(); // Home panel might depend on new settings
+
+        if (appStatusBar != null) {
             // appStatusBar.setPersistentMessage(settings.getWelcomeMessage()); // Example
         }
-        // refreshCategoryLists(); // This is likely called by settingsPanel.loadSettingsData() or when categories actually change
+        // refreshCategoryLists(); // This is likely called by
+        // settingsPanel.loadSettingsData() or when categories actually change
     }
 
     public SettingsService getSettingsService() {
@@ -329,15 +373,24 @@ public class MainFrame extends JFrame {
         if (transactionPanel != null) {
             transactionPanel.updateCategoryDropdown();
         }
-        // SettingsPanel's category display is refreshed internally or via loadSettingsData()
+        // SettingsPanel's category display is refreshed internally or via
+        // loadSettingsData()
         // if (settingsPanel != null) {
-        //    settingsPanel.refreshCategoryDisplay();
+        // settingsPanel.refreshCategoryDisplay();
         // }
         if (analysisPanel != null) {
             analysisPanel.refreshCategoryList(); // This was for the dropdowns in analysis, ensure it still works
         }
     }
-    
-    // Ensure all other methods from the original file that were not shown are preserved
+
+    /**
+     * 获取预算预测服务
+     */
+    public BudgetForecastService getBudgetForecastService() {
+        return this.budgetForecastService;
+    }
+
+    // Ensure all other methods from the original file that were not shown are
+    // preserved
     // The tool will handle this by applying changes on top of the original.
 }

@@ -14,6 +14,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Calendar;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.List;
 import java.util.Optional;
@@ -52,13 +53,13 @@ import com.financetracker.util.PathUtil;
  * Panel for managing transactions.
  */
 public class TransactionPanel extends JPanel {
-    
+
     private TransactionService transactionService;
     private SettingsService settingsService;
     private ActionListener panelNavigationListener;
     private CsvBatchImporter csvBatchImporter;
     private TransactionCsvExporter csvExporter;
-    
+
     private JTable transactionTable;
     private DefaultTableModel tableModel;
     private JSpinner dateSpinner;
@@ -70,21 +71,22 @@ public class TransactionPanel extends JPanel {
     private JRadioButton expenseRadio;
     private JRadioButton incomeRadio;
     private JTextField editingTransactionIdField;
-    
+    private boolean isDescendingOrder = true; // 默认为倒序(最新的在前)
+
     /**
      * Constructor for TransactionPanel.
      * 
-     * @param transactionService The transaction service
-     * @param settingsService The settings service
+     * @param transactionService      The transaction service
+     * @param settingsService         The settings service
      * @param panelNavigationListener The panel navigation listener
-     * @param csvBatchImporter The CSV batch importer
-     * @param csvExporter The CSV exporter
+     * @param csvBatchImporter        The CSV batch importer
+     * @param csvExporter             The CSV exporter
      */
-    public TransactionPanel(TransactionService transactionService, 
-                              SettingsService settingsService, 
-                              ActionListener panelNavigationListener,
-                              CsvBatchImporter csvBatchImporter,
-                              TransactionCsvExporter csvExporter) {
+    public TransactionPanel(TransactionService transactionService,
+            SettingsService settingsService,
+            ActionListener panelNavigationListener,
+            CsvBatchImporter csvBatchImporter,
+            TransactionCsvExporter csvExporter) {
         this.transactionService = transactionService;
         this.settingsService = settingsService;
         this.panelNavigationListener = panelNavigationListener;
@@ -93,23 +95,23 @@ public class TransactionPanel extends JPanel {
         initComponents();
         loadTransactions();
     }
-    
+
     /**
      * Initializes the panel components.
      */
     private void initComponents() {
         // Set layout
         setLayout(new BorderLayout());
-        
+
         // Create header panel
         JPanel headerPanel = new JPanel();
         headerPanel.setLayout(new BorderLayout());
         headerPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
-        
+
         JLabel titleLabel = new JLabel("Transaction Record Management");
         titleLabel.setFont(new Font("Arial", Font.BOLD, 18));
         headerPanel.add(titleLabel, BorderLayout.WEST);
-        
+
         JButton homeButton = new JButton("HOME");
         homeButton.setActionCommand("home");
         homeButton.addActionListener(e -> {
@@ -118,7 +120,7 @@ public class TransactionPanel extends JPanel {
             }
         });
         headerPanel.add(homeButton, BorderLayout.EAST);
-        
+
         add(headerPanel, BorderLayout.NORTH);
 
         // Hidden field for editing ID
@@ -128,22 +130,22 @@ public class TransactionPanel extends JPanel {
         JPanel tablePanel = new JPanel();
         tablePanel.setLayout(new BorderLayout());
         tablePanel.setBorder(BorderFactory.createTitledBorder("Transactions"));
-        
-        String[] columns = {"ID", "Date", "Amount", "Description", "Category", "Participant", "Type"};
+
+        String[] columns = { "ID", "Date", "Amount", "Description", "Category", "Participant", "Type" };
         tableModel = new DefaultTableModel(columns, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                return false; 
+                return false;
             }
         };
         transactionTable = new JTable(tableModel);
-        transactionTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        transactionTable.setSelectionMode(ListSelectionModel.MULTIPLE_INTERVAL_SELECTION);
         transactionTable.getColumnModel().getColumn(0).setMinWidth(0);
         transactionTable.getColumnModel().getColumn(0).setMaxWidth(0);
         transactionTable.getColumnModel().getColumn(0).setPreferredWidth(0);
         JScrollPane scrollPane = new JScrollPane(transactionTable);
         tablePanel.add(scrollPane, BorderLayout.CENTER);
-        
+
         JPanel tableButtonPanel = new JPanel();
         tableButtonPanel.setLayout(new FlowLayout(FlowLayout.RIGHT));
         JButton deleteButton = new JButton("删除选中项");
@@ -154,8 +156,14 @@ public class TransactionPanel extends JPanel {
         importButton.addActionListener(e -> importCsv());
         JButton exportButton = new JButton("导出CSV");
         exportButton.addActionListener(e -> exportCsv());
+
+        // 添加排序按钮
+        JButton sortButton = new JButton("切换时间排序");
+        sortButton.addActionListener(e -> toggleSortOrder());
+
         tableButtonPanel.add(importButton);
         tableButtonPanel.add(exportButton);
+        tableButtonPanel.add(sortButton); // 添加排序按钮
         tableButtonPanel.add(editButton);
         tableButtonPanel.add(deleteButton);
         tablePanel.add(tableButtonPanel, BorderLayout.SOUTH);
@@ -164,56 +172,77 @@ public class TransactionPanel extends JPanel {
         JPanel formPanel = new JPanel();
         formPanel.setLayout(new BorderLayout());
         formPanel.setBorder(BorderFactory.createTitledBorder("Add/Edit Transaction"));
-        
+
         JPanel fieldsPanel = new JPanel();
         fieldsPanel.setLayout(new GridBagLayout());
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.insets = new Insets(5, 5, 5, 5);
-        
+
         // Date field
-        gbc.gridx = 0; gbc.gridy = 0; fieldsPanel.add(new JLabel("Date:"), gbc);
-        gbc.gridx = 1; gbc.gridy = 0;
+        gbc.gridx = 0;
+        gbc.gridy = 0;
+        fieldsPanel.add(new JLabel("Date:"), gbc);
+        gbc.gridx = 1;
+        gbc.gridy = 0;
         Date now = new Date();
         SpinnerDateModel dateModel = new SpinnerDateModel(now, null, null, Calendar.DAY_OF_MONTH);
         dateSpinner = new JSpinner(dateModel);
         JSpinner.DateEditor dateEditor = new JSpinner.DateEditor(dateSpinner, "yyyy-MM-dd");
         dateSpinner.setEditor(dateEditor);
         fieldsPanel.add(dateSpinner, gbc);
-        
+
         // Amount field
-        gbc.gridx = 0; gbc.gridy = 1; fieldsPanel.add(new JLabel("Amount:"), gbc);
-        gbc.gridx = 1; gbc.gridy = 1;
+        gbc.gridx = 0;
+        gbc.gridy = 1;
+        fieldsPanel.add(new JLabel("Amount:"), gbc);
+        gbc.gridx = 1;
+        gbc.gridy = 1;
         amountField = new JTextField(10);
         fieldsPanel.add(amountField, gbc);
-        
+
         // Description field
-        gbc.gridx = 0; gbc.gridy = 2; fieldsPanel.add(new JLabel("Description:"), gbc);
-        gbc.gridx = 1; gbc.gridy = 2;
+        gbc.gridx = 0;
+        gbc.gridy = 2;
+        fieldsPanel.add(new JLabel("Description:"), gbc);
+        gbc.gridx = 1;
+        gbc.gridy = 2;
         descriptionField = new JTextField(20);
         fieldsPanel.add(descriptionField, gbc);
-        
+
         // Category field
-        gbc.gridx = 0; gbc.gridy = 3; fieldsPanel.add(new JLabel("Category:"), gbc);
-        gbc.gridx = 1; gbc.gridy = 3;
+        gbc.gridx = 0;
+        gbc.gridy = 3;
+        fieldsPanel.add(new JLabel("Category:"), gbc);
+        gbc.gridx = 1;
+        gbc.gridy = 3;
         categoryComboBox = new JComboBox<>();
         fieldsPanel.add(categoryComboBox, gbc);
-        
+
         // Participant field
-        gbc.gridx = 0; gbc.gridy = 4; fieldsPanel.add(new JLabel("Participant:"), gbc);
-        gbc.gridx = 1; gbc.gridy = 4;
+        gbc.gridx = 0;
+        gbc.gridy = 4;
+        fieldsPanel.add(new JLabel("Participant:"), gbc);
+        gbc.gridx = 1;
+        gbc.gridy = 4;
         participantField = new JTextField(20);
         fieldsPanel.add(participantField, gbc);
-        
+
         // Notes field
-        gbc.gridx = 0; gbc.gridy = 5; fieldsPanel.add(new JLabel("Notes:"), gbc);
-        gbc.gridx = 1; gbc.gridy = 5;
+        gbc.gridx = 0;
+        gbc.gridy = 5;
+        fieldsPanel.add(new JLabel("Notes:"), gbc);
+        gbc.gridx = 1;
+        gbc.gridy = 5;
         notesField = new JTextField(20);
         fieldsPanel.add(notesField, gbc);
-        
+
         // Type radio buttons
-        gbc.gridx = 0; gbc.gridy = 6; fieldsPanel.add(new JLabel("Type:"), gbc);
-        gbc.gridx = 1; gbc.gridy = 6;
+        gbc.gridx = 0;
+        gbc.gridy = 6;
+        fieldsPanel.add(new JLabel("Type:"), gbc);
+        gbc.gridx = 1;
+        gbc.gridy = 6;
         JPanel radioPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         expenseRadio = new JRadioButton("Expense");
         incomeRadio = new JRadioButton("Income");
@@ -221,18 +250,18 @@ public class TransactionPanel extends JPanel {
         ButtonGroup group = new ButtonGroup();
         group.add(expenseRadio);
         group.add(incomeRadio);
-        
+
         updateCategoryDropdown();
-        
+
         ActionListener categoryUpdateListener = e -> updateCategoryDropdown();
         expenseRadio.addActionListener(categoryUpdateListener);
         incomeRadio.addActionListener(categoryUpdateListener);
         radioPanel.add(expenseRadio);
         radioPanel.add(incomeRadio);
         fieldsPanel.add(radioPanel, gbc);
-        
+
         formPanel.add(fieldsPanel, BorderLayout.CENTER);
-        
+
         JPanel formButtonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         JButton clearButton = new JButton("Clear Form");
         clearButton.addActionListener(e -> clearForm());
@@ -255,31 +284,40 @@ public class TransactionPanel extends JPanel {
         // Add the split pane to the main panel
         add(mainSplitPane, BorderLayout.CENTER);
     }
-    
+
     /**
      * Loads transactions from the data file and displays them in the table.
      */
     public void loadTransactions() {
         // Clear the table
         tableModel.setRowCount(0);
-        
+
         // Load transactions
         List<Transaction> transactions = transactionService.getAllTransactions();
-        
+
+        // 根据当前排序方式重新排序
+        if (!isDescendingOrder) {
+            // 如果是升序（旧的在前），则需要反转列表
+            transactions.sort(Comparator.comparing(Transaction::getDate));
+        } else {
+            // 如果是降序（新的在前），TransactionService已经排好了，不需要重新排序
+            transactions.sort(Comparator.comparing(Transaction::getDate).reversed());
+        }
+
         // Add transactions to the table
         for (Transaction transaction : transactions) {
-            tableModel.addRow(new Object[]{
-                transaction.getId(),
-                transaction.getDate().format(DateTimeFormatter.ISO_LOCAL_DATE),
-                transaction.getAmount(),
-                transaction.getDescription(),
-                transaction.getCategory(),
-                transaction.getParticipant(),
-                transaction.isExpense() ? "Expense" : "Income"
+            tableModel.addRow(new Object[] {
+                    transaction.getId(),
+                    transaction.getDate().format(DateTimeFormatter.ISO_LOCAL_DATE),
+                    transaction.getAmount(),
+                    transaction.getDescription(),
+                    transaction.getCategory(),
+                    transaction.getParticipant(),
+                    transaction.isExpense() ? "Expense" : "Income"
             });
         }
     }
-    
+
     /**
      * 导入CSV文件，支持单文件和多文件/目录导入
      */
@@ -296,28 +334,31 @@ public class TransactionPanel extends JPanel {
         int result = fileChooser.showOpenDialog(SwingUtilities.getWindowAncestor(this));
         if (result == JFileChooser.APPROVE_OPTION) {
             File[] selectedFiles = fileChooser.getSelectedFiles();
-            if (selectedFiles.length == 0) return;
+            if (selectedFiles.length == 0)
+                return;
 
             // TODO: Restore SwingWorker for background processing and progress dialog.
             // This is a simplified synchronous call for now.
             try {
                 List<String> filePaths = new ArrayList<>();
-                for (File f : selectedFiles) filePaths.add(f.getAbsolutePath());
+                for (File f : selectedFiles)
+                    filePaths.add(f.getAbsolutePath());
 
                 CsvBatchImporter.ImportResult importResult = csvBatchImporter.importCsvFiles(selectedFiles);
-                JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this), 
-                    String.format("Import Complete. Success Files: %d, Failed Files: %d, Total Records: %d", 
-                                  importResult.getSuccessFileCount(), importResult.getFailedFileCount(), importResult.getTotalRecordCount()), 
-                    "CSV Import Result", JOptionPane.INFORMATION_MESSAGE);
-                loadTransactions(); 
+                JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this),
+                        String.format("Import Complete. Success Files: %d, Failed Files: %d, Total Records: %d",
+                                importResult.getSuccessFileCount(), importResult.getFailedFileCount(),
+                                importResult.getTotalRecordCount()),
+                        "CSV Import Result", JOptionPane.INFORMATION_MESSAGE);
+                loadTransactions();
             } catch (Exception e) {
-                 JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this), 
-                    "Error during CSV import: " + e.getMessage(), "Import Error", JOptionPane.ERROR_MESSAGE);
-                 e.printStackTrace();
+                JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this),
+                        "Error during CSV import: " + e.getMessage(), "Import Error", JOptionPane.ERROR_MESSAGE);
+                e.printStackTrace();
             }
         }
     }
-    
+
     /**
      * 导出交易记录到CSV文件，支持整体导出和按月导出
      */
@@ -336,30 +377,31 @@ public class TransactionPanel extends JPanel {
             File fileToSave = fileChooser.getSelectedFile();
             // TODO: Restore SwingWorker for background processing.
             try {
-                boolean success = csvExporter.exportTransactionsToPath(transactionService.getAllTransactions(), fileToSave.getAbsolutePath());
+                boolean success = csvExporter.exportTransactionsToPath(transactionService.getAllTransactions(),
+                        fileToSave.getAbsolutePath());
                 if (success) {
-                    JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this), 
-                        "Transactions exported successfully to " + fileToSave.getAbsolutePath(), 
-                        "Export Success", JOptionPane.INFORMATION_MESSAGE);
+                    JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this),
+                            "Transactions exported successfully to " + fileToSave.getAbsolutePath(),
+                            "Export Success", JOptionPane.INFORMATION_MESSAGE);
                 } else {
-                    JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this), 
-                        "Failed to export transactions.", "Export Error", JOptionPane.ERROR_MESSAGE);
+                    JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this),
+                            "Failed to export transactions.", "Export Error", JOptionPane.ERROR_MESSAGE);
                 }
             } catch (Exception e) {
-                 JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this), 
-                    "Error during CSV export: " + e.getMessage(), "Export Error", JOptionPane.ERROR_MESSAGE);
-                 e.printStackTrace();
+                JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this),
+                        "Error during CSV export: " + e.getMessage(), "Export Error", JOptionPane.ERROR_MESSAGE);
+                e.printStackTrace();
             }
         }
     }
-    
+
     /**
      * Clears the form fields.
      */
     private void clearForm() {
         // 重置日期选择器为当前日期
         dateSpinner.setValue(new Date());
-        
+
         amountField.setText("");
         descriptionField.setText("");
         categoryComboBox.setSelectedIndex(0);
@@ -368,40 +410,65 @@ public class TransactionPanel extends JPanel {
         expenseRadio.setSelected(true);
         editingTransactionIdField.setText("");
     }
-    
+
     /**
      * 删除选中的交易记录，支持单个或批量删除
      */
     private void deleteSelectedTransactions() {
-        int selectedRow = transactionTable.getSelectedRow();
-        if (selectedRow == -1) {
-            JOptionPane.showMessageDialog(this, "Please select a transaction to delete.", "No Selection", JOptionPane.WARNING_MESSAGE);
+        int[] selectedRows = transactionTable.getSelectedRows();
+        if (selectedRows.length == 0) {
+            JOptionPane.showMessageDialog(this, "请选择要删除的交易记录", "未选择", JOptionPane.WARNING_MESSAGE);
             return;
         }
-        int confirm = JOptionPane.showConfirmDialog( SwingUtilities.getWindowAncestor(this), // Dialog ownership 
-            "Are you sure you want to delete the selected transaction?", 
-            "Confirm Deletion", JOptionPane.YES_NO_OPTION);
-        
+
+        String message = selectedRows.length == 1
+                ? "确定要删除选中的交易记录吗？"
+                : String.format("确定要删除选中的%d条交易记录吗？", selectedRows.length);
+
+        int confirm = JOptionPane.showConfirmDialog(
+                SwingUtilities.getWindowAncestor(this),
+                message,
+                "确认删除",
+                JOptionPane.YES_NO_OPTION);
+
         if (confirm == JOptionPane.YES_OPTION) {
-            String id = (String) tableModel.getValueAt(selectedRow, 0);
-            if (transactionService.deleteTransaction(id)) { // deleteTransaction now takes String id
-                loadTransactions(); 
-                JOptionPane.showMessageDialog(this, "Transaction deleted successfully.", "Success", JOptionPane.INFORMATION_MESSAGE);
-            } else {
-                JOptionPane.showMessageDialog(this, "Failed to delete transaction.", "Error", JOptionPane.ERROR_MESSAGE);
+            int successCount = 0;
+            int failCount = 0;
+
+            // 从后向前删除，避免索引变化问题
+            for (int i = selectedRows.length - 1; i >= 0; i--) {
+                int row = selectedRows[i];
+                String id = (String) tableModel.getValueAt(row, 0);
+
+                if (transactionService.deleteTransaction(id)) {
+                    successCount++;
+                } else {
+                    failCount++;
+                }
             }
+
+            // 重新加载交易记录
+            loadTransactions();
+
+            // 显示删除结果
+            String resultMessage = String.format("删除完成：成功%d条，失败%d条", successCount, failCount);
+            JOptionPane.showMessageDialog(this, resultMessage, "删除结果", JOptionPane.INFORMATION_MESSAGE);
         }
     }
 
     /**
-     * Updates the category dropdown based on the selected transaction type (Expense/Income).
+     * Updates the category dropdown based on the selected transaction type
+     * (Expense/Income).
      */
     public void updateCategoryDropdown() {
-        if (settingsService == null) return;
+        if (settingsService == null)
+            return;
         Settings settings = settingsService.getSettings();
-        if (settings == null || categoryComboBox == null) return;
+        if (settings == null || categoryComboBox == null)
+            return;
         String previouslySelected = (String) categoryComboBox.getSelectedItem();
-        List<String> categories = expenseRadio.isSelected() ? settings.getExpenseCategories() : settings.getIncomeCategories();
+        List<String> categories = expenseRadio.isSelected() ? settings.getExpenseCategories()
+                : settings.getIncomeCategories();
         categoryComboBox.removeAllItems();
         if (categories != null) {
             for (String category : categories) {
@@ -418,7 +485,7 @@ public class TransactionPanel extends JPanel {
             }
         }
     }
-    
+
     /**
      * 刷新类别下拉列表
      */
@@ -431,13 +498,14 @@ public class TransactionPanel extends JPanel {
         boolean isDark = settings.isDarkModeEnabled();
         this.setBackground(isDark ? new Color(50, 50, 55) : UIManager.getColor("Panel.background"));
         if (transactionTable != null && transactionTable.getParent() instanceof JViewport) {
-            ((JViewport)transactionTable.getParent()).setBackground(isDark ? new Color(45,45,45) : Color.WHITE);
-            transactionTable.setBackground(isDark ? new Color(60,63,65) : Color.WHITE);
+            ((JViewport) transactionTable.getParent()).setBackground(isDark ? new Color(45, 45, 45) : Color.WHITE);
+            transactionTable.setBackground(isDark ? new Color(60, 63, 65) : Color.WHITE);
             transactionTable.setForeground(isDark ? Color.LIGHT_GRAY : Color.BLACK);
-            transactionTable.getTableHeader().setBackground(isDark ? new Color(60,63,80) : new Color(220,220,220));
+            transactionTable.getTableHeader().setBackground(isDark ? new Color(60, 63, 80) : new Color(220, 220, 220));
             transactionTable.getTableHeader().setForeground(isDark ? Color.LIGHT_GRAY : Color.BLACK);
         }
-        // TODO: Theme form fields more specifically if UIManager defaults are not sufficient
+        // TODO: Theme form fields more specifically if UIManager defaults are not
+        // sufficient
     }
 
     private void saveTransaction() {
@@ -453,14 +521,16 @@ public class TransactionPanel extends JPanel {
             String idToSave = editingTransactionIdField.getText();
 
             if (description.trim().isEmpty() || category == null || category.trim().isEmpty()) {
-                JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this), "Description and Category are required.", "Input Error", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this),
+                        "Description and Category are required.", "Input Error", JOptionPane.ERROR_MESSAGE);
                 return;
             }
-            
+
             Transaction tx;
-            if (idToSave != null && !idToSave.trim().isEmpty()) { 
+            if (idToSave != null && !idToSave.trim().isEmpty()) {
                 // 更新现有交易
-                // 使用6参数构造函数 Transaction(String id, LocalDate date, double amount, String description, String category, boolean isExpense)
+                // 使用6参数构造函数 Transaction(String id, LocalDate date, double amount, String
+                // description, String category, boolean isExpense)
                 tx = new Transaction(idToSave, date, amount, description, category, isExpense);
                 // 单独设置 participant 和 notes
                 tx.setParticipant(participant);
@@ -469,27 +539,34 @@ public class TransactionPanel extends JPanel {
                 tx.setExpense(isExpense); // 确保使用表单中的isExpense状态
 
                 if (transactionService.updateTransaction(tx)) {
-                    JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this), "Transaction updated successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+                    JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this),
+                            "Transaction updated successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
                 } else {
-                    JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this), "Failed to update transaction.", "Error", JOptionPane.ERROR_MESSAGE);
+                    JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this),
+                            "Failed to update transaction.", "Error", JOptionPane.ERROR_MESSAGE);
                 }
-            } else { 
+            } else {
                 // 添加新交易
-                // 使用7参数构造函数 Transaction(LocalDate date, double amount, String description, String category, String participant, String notes, boolean isExpense)
+                // 使用7参数构造函数 Transaction(LocalDate date, double amount, String description,
+                // String category, String participant, String notes, boolean isExpense)
                 // ID 会在 Transaction 类内部自动生成
                 tx = new Transaction(date, amount, description, category, participant, notes, isExpense);
                 if (transactionService.addTransaction(tx)) {
-                    JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this), "Transaction added successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
+                    JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this),
+                            "Transaction added successfully!", "Success", JOptionPane.INFORMATION_MESSAGE);
                 } else {
-                     JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this), "Failed to add transaction.", "Error", JOptionPane.ERROR_MESSAGE);
+                    JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this), "Failed to add transaction.",
+                            "Error", JOptionPane.ERROR_MESSAGE);
                 }
             }
             loadTransactions();
             clearForm();
         } catch (NumberFormatException e) {
-            JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this), "Invalid amount format.", "Input Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this), "Invalid amount format.",
+                    "Input Error", JOptionPane.ERROR_MESSAGE);
         } catch (Exception e) {
-            JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this), "Error saving transaction: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this),
+                    "Error saving transaction: " + e.getMessage(), "Error", JOptionPane.ERROR_MESSAGE);
             e.printStackTrace();
         }
     }
@@ -497,15 +574,16 @@ public class TransactionPanel extends JPanel {
     private void populateFormForEdit() {
         int selectedRow = transactionTable.getSelectedRow();
         if (selectedRow == -1) {
-            JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this), "Please select a transaction to edit.", "No Selection", JOptionPane.WARNING_MESSAGE);
+            JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this),
+                    "Please select a transaction to edit.", "No Selection", JOptionPane.WARNING_MESSAGE);
             return;
         }
         // 从tableModel获取ID，第0列是ID
-        String id = (String) tableModel.getValueAt(selectedRow, 0); 
-        
+        String id = (String) tableModel.getValueAt(selectedRow, 0);
+
         // 从服务获取最新的交易信息
         Optional<Transaction> txOptional = transactionService.getTransactionById(id);
-        
+
         if (txOptional.isPresent()) {
             Transaction tx = txOptional.get();
             editingTransactionIdField.setText(tx.getId()); // 设置隐藏的ID字段
@@ -514,17 +592,31 @@ public class TransactionPanel extends JPanel {
             descriptionField.setText(tx.getDescription());
             participantField.setText(tx.getParticipant() != null ? tx.getParticipant() : ""); // 处理null
             notesField.setText(tx.getNotes() != null ? tx.getNotes() : ""); // 处理null
-            
+
             if (tx.isExpense()) {
                 expenseRadio.setSelected(true);
             } else {
                 incomeRadio.setSelected(true);
             }
             // updateCategoryDropdown 应该在设置 expense/income radio 之后调用，以加载正确的类别列表
-            updateCategoryDropdown(); 
+            updateCategoryDropdown();
             categoryComboBox.setSelectedItem(tx.getCategory());
         } else {
-             JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this), "Could not find transaction details for ID: " + id, "Error", JOptionPane.ERROR_MESSAGE);
+            JOptionPane.showMessageDialog(SwingUtilities.getWindowAncestor(this),
+                    "Could not find transaction details for ID: " + id, "Error", JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    /**
+     * 切换交易记录的排序方式（时间正序或倒序）
+     */
+    private void toggleSortOrder() {
+        isDescendingOrder = !isDescendingOrder;
+        String orderMessage = isDescendingOrder ? "时间倒序（新→旧）" : "时间正序（旧→新）";
+        JOptionPane.showMessageDialog(this,
+                "已切换为" + orderMessage,
+                "排序方式已更改",
+                JOptionPane.INFORMATION_MESSAGE);
+        loadTransactions();
     }
 }
