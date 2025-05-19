@@ -187,15 +187,6 @@ public class SettingsPanel extends JPanel {
         tabbedPane.addTab("Saving Goals", new JScrollPane(savingsGoalsPanel));
         tabbedPane.addTab("General Settings", new JScrollPane(generalSettingsPanelHolder));
 
-        // 添加特殊日期表格的选择监听器
-        if (specialDatesTable != null) {
-            specialDatesTable.getSelectionModel().addListSelectionListener(e -> {
-                if (!e.getValueIsAdjusting()) {
-                    fillSpecialDateFormFromSelection();
-                }
-            });
-        }
-
         add(tabbedPane, BorderLayout.CENTER);
 
         JPanel bottomButtonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
@@ -210,144 +201,17 @@ public class SettingsPanel extends JPanel {
     }
 
     /**
-     * 根据表格选择填充特殊日期表单
-     */
-    private void fillSpecialDateFormFromSelection() {
-        try {
-            int selectedRow = specialDatesTable.getSelectedRow();
-            if (selectedRow == -1) {
-                // 没有选择行时清空表单
-                return;
-            }
-
-            // 获取选择行的数据
-            String name = (String) specialDatesTableModel.getValueAt(selectedRow, 1);
-            String dateStr = (String) specialDatesTableModel.getValueAt(selectedRow, 2);
-            String description = (String) specialDatesTableModel.getValueAt(selectedRow, 3);
-            String category = (String) specialDatesTableModel.getValueAt(selectedRow, 4);
-            Double impact = null;
-            Object impactObj = specialDatesTableModel.getValueAt(selectedRow, 5);
-            if (impactObj != null) {
-                if (impactObj instanceof Double) {
-                    impact = (Double) impactObj;
-                } else if (impactObj instanceof String) {
-                    impact = Double.parseDouble((String) impactObj);
-                }
-            }
-
-            // 解析日期
-            LocalDate date = null;
-            try {
-                date = LocalDate.parse(dateStr);
-                Date utilDate = Date.from(date.atStartOfDay(ZoneId.systemDefault()).toInstant());
-                specialDateSpinner.setValue(utilDate);
-            } catch (Exception ex) {
-                System.err.println("无法解析日期: " + dateStr);
-            }
-
-            // 填充表单
-            specialDateNameField.setText(name);
-            specialDateDescriptionField.setText(description);
-            if (category != null) {
-                specialDateCategoryComboBox.setSelectedItem(category);
-            }
-            if (impact != null) {
-                specialDateImpactField.setText(String.valueOf(impact));
-            }
-
-        } catch (Exception ex) {
-            System.err.println("填充特殊日期表单时出错: " + ex.getMessage());
-            ex.printStackTrace();
-        }
-    }
-
-    /**
-     * 删除选中的特殊日期
-     */
-    private void deleteSpecialDate() {
-        try {
-            int selectedRow = specialDatesTable.getSelectedRow();
-            if (selectedRow == -1) {
-                JOptionPane.showMessageDialog(this, "请选择要删除的特殊日期", "未选择", JOptionPane.WARNING_MESSAGE);
-                return;
-            }
-
-            // 确保ID和名称不为空
-            Object idObj = specialDatesTableModel.getValueAt(selectedRow, 0);
-            Object nameObj = specialDatesTableModel.getValueAt(selectedRow, 1);
-
-            if (idObj == null) {
-                JOptionPane.showMessageDialog(this, "无法获取特殊日期ID", "错误", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-
-            String idToDelete = idObj.toString();
-            String nameToDelete = nameObj != null ? nameObj.toString() : "未命名";
-
-            int confirm = JOptionPane.showConfirmDialog(this,
-                    "确定要删除这个特殊日期吗: " + nameToDelete + "?",
-                    "确认删除", JOptionPane.YES_NO_OPTION);
-
-            if (confirm != JOptionPane.YES_OPTION) {
-                return;
-            }
-
-            // 获取设置并执行删除
-            Settings settings = settingsService.getSettings();
-            if (settings == null) {
-                JOptionPane.showMessageDialog(this, "无法获取设置对象", "系统错误", JOptionPane.ERROR_MESSAGE);
-                return;
-            }
-
-            boolean removed = settings.removeSpecialDate(idToDelete);
-
-            if (removed) {
-                boolean saved = settingsService.saveSettings();
-                if (!saved) {
-                    JOptionPane.showMessageDialog(this, "无法保存更改", "保存错误", JOptionPane.ERROR_MESSAGE);
-                    return;
-                }
-
-                loadSpecialDates();
-                clearSpecialDateForm();
-                updateSpecialDateCategoryComboBox();
-
-                if (globalCategoryRefreshCallback != null) {
-                    globalCategoryRefreshCallback.run();
-                }
-                if (analysisRefreshCallback != null) {
-                    analysisRefreshCallback.run();
-                }
-
-                JOptionPane.showMessageDialog(this, "特殊日期已成功删除!", "成功", JOptionPane.INFORMATION_MESSAGE);
-            } else {
-                JOptionPane.showMessageDialog(this, "无法删除ID为: " + idToDelete + " 的特殊日期", "错误",
-                        JOptionPane.ERROR_MESSAGE);
-            }
-        } catch (Exception e) {
-            JOptionPane.showMessageDialog(this, "删除特殊日期时出错: " + e.getMessage(), "错误", JOptionPane.ERROR_MESSAGE);
-            e.printStackTrace();
-        }
-    }
-
-    /**
-     * 创建特殊日期面板
+     * Creates the special dates panel.
      * 
-     * @return 特殊日期面板
+     * @return The special dates panel
      */
     private JPanel createSpecialDatesPanel() {
-        JPanel mainPanel = new JPanel(new BorderLayout(10, 10));
+        JPanel panel = new JPanel();
+        panel.setLayout(new BorderLayout(10, 10));
 
-        // ===== 表格部分 =====
-        JPanel tablePanel = new JPanel(new BorderLayout());
+        JPanel tablePanel = new JPanel();
+        tablePanel.setLayout(new BorderLayout());
 
-        // 说明文字
-        JLabel explanationLabel = new JLabel(
-                "<html>特殊日期允许您标记特定日期并设置其对预算的影响。<br>正数表示预算增加，负数表示预算减少。<br>您可以设置日期是一次性的，还是每月或每年重复的。</html>");
-        explanationLabel.setBorder(BorderFactory.createEmptyBorder(0, 10, 10, 10));
-        tablePanel.add(explanationLabel, BorderLayout.NORTH);
-
-        // 设置表格模型
         String[] columns = { "ID", "名称", "日期", "描述", "影响分类", "金额影响", "预算影响示例", "重复类型" };
         specialDatesTableModel = new DefaultTableModel(columns, 0) {
             @Override
@@ -356,31 +220,30 @@ public class SettingsPanel extends JPanel {
             }
         };
 
-        // 创建表格
         specialDatesTable = new JTable(specialDatesTableModel);
         specialDatesTable.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
-
-        // 隐藏ID列
         specialDatesTable.getColumnModel().getColumn(0).setMinWidth(0);
         specialDatesTable.getColumnModel().getColumn(0).setMaxWidth(0);
         specialDatesTable.getColumnModel().getColumn(0).setPreferredWidth(0);
 
-        // 添加表格到滚动面板
+        JLabel explanationLabel = new JLabel(
+                "<html>特殊日期允许您标记特定日期并设置其对预算的影响。<br>正数表示预算增加，负数表示预算减少。<br>您可以设置日期是一次性的，还是每月或每年重复的。</html>");
+        explanationLabel.setBorder(BorderFactory.createEmptyBorder(0, 10, 10, 10));
+        tablePanel.add(explanationLabel, BorderLayout.NORTH);
+
         JScrollPane scrollPane = new JScrollPane(specialDatesTable);
         tablePanel.add(scrollPane, BorderLayout.CENTER);
 
-        // 添加表格面板到主面板
-        mainPanel.add(tablePanel, BorderLayout.CENTER);
+        panel.add(tablePanel, BorderLayout.CENTER);
 
-        // ===== 表单部分 =====
-        JPanel formPanel = new JPanel(new GridBagLayout());
+        JPanel formPanel = new JPanel();
+        formPanel.setLayout(new GridBagLayout());
         formPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
 
         GridBagConstraints gbc = new GridBagConstraints();
         gbc.fill = GridBagConstraints.HORIZONTAL;
         gbc.insets = new Insets(5, 5, 5, 5);
 
-        // 名称
         gbc.gridx = 0;
         gbc.gridy = 0;
         formPanel.add(new JLabel("名称:"), gbc);
@@ -390,7 +253,6 @@ public class SettingsPanel extends JPanel {
         specialDateNameField = new JTextField(20);
         formPanel.add(specialDateNameField, gbc);
 
-        // 日期
         gbc.gridx = 0;
         gbc.gridy = 1;
         formPanel.add(new JLabel("日期:"), gbc);
@@ -404,7 +266,6 @@ public class SettingsPanel extends JPanel {
         specialDateSpinner.setEditor(specialDateEditor);
         formPanel.add(specialDateSpinner, gbc);
 
-        // 描述
         gbc.gridx = 0;
         gbc.gridy = 2;
         formPanel.add(new JLabel("描述:"), gbc);
@@ -414,7 +275,6 @@ public class SettingsPanel extends JPanel {
         specialDateDescriptionField = new JTextField(20);
         formPanel.add(specialDateDescriptionField, gbc);
 
-        // 影响分类
         gbc.gridx = 0;
         gbc.gridy = 3;
         formPanel.add(new JLabel("影响分类:"), gbc);
@@ -425,7 +285,6 @@ public class SettingsPanel extends JPanel {
         updateSpecialDateCategoryComboBox();
         formPanel.add(specialDateCategoryComboBox, gbc);
 
-        // 金额影响
         gbc.gridx = 0;
         gbc.gridy = 4;
         formPanel.add(new JLabel("金额影响:"), gbc);
@@ -435,26 +294,31 @@ public class SettingsPanel extends JPanel {
         specialDateImpactField = new JTextField(10);
         formPanel.add(specialDateImpactField, gbc);
 
-        // 重复类型
+        // 添加重复类型选择
         gbc.gridx = 0;
         gbc.gridy = 5;
         formPanel.add(new JLabel("重复类型:"), gbc);
 
         gbc.gridx = 1;
         gbc.gridy = 5;
+        JPanel recurrencePanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
         JComboBox<String> recurrenceTypeComboBox = new JComboBox<>(new String[] { "不重复", "每月重复", "每年重复" });
-        formPanel.add(recurrenceTypeComboBox, gbc);
+        recurrencePanel.add(recurrenceTypeComboBox);
+        formPanel.add(recurrencePanel, gbc);
 
-        // 按钮面板
-        JPanel buttonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
+        JPanel buttonPanel = new JPanel();
+        buttonPanel.setLayout(new FlowLayout(FlowLayout.RIGHT));
+
         JButton addButton = new JButton("添加");
         addButton.addActionListener(e -> {
+            // 获取重复类型
             String recurrenceType = (String) recurrenceTypeComboBox.getSelectedItem();
             addSpecialDateWithRecurrence(recurrenceType);
         });
 
         JButton editButton = new JButton("编辑");
         editButton.addActionListener(e -> {
+            // 获取重复类型
             String recurrenceType = (String) recurrenceTypeComboBox.getSelectedItem();
             editSpecialDateWithRecurrence(recurrenceType);
         });
@@ -466,16 +330,14 @@ public class SettingsPanel extends JPanel {
         buttonPanel.add(editButton);
         buttonPanel.add(deleteButton);
 
-        // 添加按钮面板到表单
         gbc.gridx = 0;
         gbc.gridy = 6;
         gbc.gridwidth = 2;
         formPanel.add(buttonPanel, gbc);
 
-        // 添加表单面板到主面板
-        mainPanel.add(formPanel, BorderLayout.SOUTH);
+        panel.add(formPanel, BorderLayout.SOUTH);
 
-        return mainPanel;
+        return panel;
     }
 
     /**
@@ -666,6 +528,43 @@ public class SettingsPanel extends JPanel {
     }
 
     /**
+     * Deletes the selected special date.
+     */
+    private void deleteSpecialDate() {
+        int selectedRow = specialDatesTable.getSelectedRow();
+        if (selectedRow == -1) {
+            JOptionPane.showMessageDialog(this, "请选择要删除的特殊日期", "未选择", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+
+        String idToDelete = (String) specialDatesTableModel.getValueAt(selectedRow, 0);
+        String nameToDelete = (String) specialDatesTableModel.getValueAt(selectedRow, 1);
+
+        int confirm = JOptionPane.showConfirmDialog(this, "确定要删除这个特殊日期吗: " + nameToDelete + "?", "确认删除",
+                JOptionPane.YES_NO_OPTION);
+        if (confirm != JOptionPane.YES_OPTION) {
+            return;
+        }
+
+        Settings settings = settingsService.getSettings();
+        boolean removed = settings.removeSpecialDate(idToDelete);
+
+        if (removed) {
+            settingsService.saveSettings();
+            loadSpecialDates();
+            clearSpecialDateForm();
+            updateSpecialDateCategoryComboBox();
+            if (globalCategoryRefreshCallback != null)
+                globalCategoryRefreshCallback.run();
+            if (analysisRefreshCallback != null)
+                analysisRefreshCallback.run();
+            JOptionPane.showMessageDialog(this, "特殊日期已成功删除!", "成功", JOptionPane.INFORMATION_MESSAGE);
+        } else {
+            JOptionPane.showMessageDialog(this, "无法删除ID为: " + idToDelete + " 的特殊日期", "错误", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    /**
      * Clears the special date form.
      */
     private void clearSpecialDateForm() {
@@ -679,101 +578,53 @@ public class SettingsPanel extends JPanel {
     }
 
     /**
-     * 加载特殊日期到表格中
+     * Loads special dates into the table.
      */
     public void loadSpecialDates() {
-        try {
-            // 检查必要组件是否初始化
-            if (specialDatesTableModel == null) {
-                System.err.println("表格模型未初始化");
-                return;
-            }
-            if (specialDateService == null) {
-                System.err.println("特殊日期服务未初始化");
-                return;
-            }
-            if (settingsService == null) {
-                System.err.println("设置服务未初始化");
-                return;
-            }
+        if (specialDatesTableModel == null || specialDateService == null || settingsService == null)
+            return;
+        specialDatesTableModel.setRowCount(0);
 
-            // 清除表格数据
-            specialDatesTableModel.setRowCount(0);
+        Settings settings = settingsService.getSettings();
+        if (settings == null || settings.getSpecialDates() == null)
+            return;
 
-            // 获取设置对象
-            Settings settings = settingsService.getSettings();
-            if (settings == null) {
-                System.err.println("无法获取设置对象");
-                return;
-            }
-            if (settings.getSpecialDates() == null) {
-                System.err.println("特殊日期列表为空");
-                return;
-            }
+        // 获取特殊日期列表并按日期排序
+        List<SpecialDate> specialDates = new ArrayList<>(settings.getSpecialDates());
+        specialDates.sort((date1, date2) -> date1.getDate().compareTo(date2.getDate()));
 
-            // 获取特殊日期列表并按日期排序
-            List<SpecialDate> specialDates = new ArrayList<>(settings.getSpecialDates());
-            // 按日期排序
-            specialDates.sort((date1, date2) -> {
-                if (date1 == null || date1.getDate() == null)
-                    return 1;
-                if (date2 == null || date2.getDate() == null)
-                    return -1;
-                return date1.getDate().compareTo(date2.getDate());
-            });
-
-            // 填充表格数据
+        for (SpecialDate specialDate : specialDates) {
             double baseBudget = (settings != null) ? settings.getMonthlyBudget() : 0.0;
+            double amountIncreaseValue = specialDate.getAmountIncrease();
+            double adjustedBudget = baseBudget + amountIncreaseValue;
+            String budgetEffect = String.format("%.2f + %.2f = %.2f", baseBudget, amountIncreaseValue, adjustedBudget);
 
-            for (SpecialDate specialDate : specialDates) {
-                if (specialDate == null)
-                    continue;
-
-                // 计算预算影响
-                double amountIncreaseValue = specialDate.getAmountIncrease();
-                double adjustedBudget = baseBudget + amountIncreaseValue;
-                String budgetEffect = String.format("%.2f + %.2f = %.2f",
-                        baseBudget, amountIncreaseValue, adjustedBudget);
-
-                // 生成重复类型文本
-                String recurrenceTypeText = "一次性";
-                if (specialDate.isRecurring()) {
-                    switch (specialDate.getRecurrenceType()) {
-                        case MONTHLY:
-                            recurrenceTypeText = "每月" + specialDate.getDayOfMonth() + "日";
-                            break;
-                        case ANNUALLY:
-                            recurrenceTypeText = "每年" + specialDate.getMonthOfYear() + "月" +
-                                    specialDate.getDayOfMonth() + "日";
-                            break;
-                        default:
-                            recurrenceTypeText = "一次性";
-                    }
+            // 根据重复类型生成显示文本
+            String recurrenceTypeText = "一次性";
+            if (specialDate.isRecurring()) {
+                switch (specialDate.getRecurrenceType()) {
+                    case MONTHLY:
+                        recurrenceTypeText = "每月" + specialDate.getDayOfMonth() + "日";
+                        break;
+                    case ANNUALLY:
+                        recurrenceTypeText = "每年" + specialDate.getMonthOfYear() + "月" + specialDate.getDayOfMonth()
+                                + "日";
+                        break;
+                    default:
+                        recurrenceTypeText = "一次性";
                 }
-
-                // 添加行到表格
-                Object[] rowData = new Object[] {
-                        specialDate.getId(),
-                        specialDate.getName(),
-                        specialDate.getDate().format(DateTimeFormatter.ISO_LOCAL_DATE),
-                        specialDate.getDescription(),
-                        specialDate.getAffectedCategory(),
-                        specialDate.getAmountIncrease(),
-                        budgetEffect,
-                        recurrenceTypeText
-                };
-
-                specialDatesTableModel.addRow(rowData);
             }
 
-            // 刷新表格UI
-            if (specialDatesTable != null) {
-                specialDatesTable.repaint();
-            }
-
-        } catch (Exception e) {
-            System.err.println("加载特殊日期时出错: " + e.getMessage());
-            e.printStackTrace();
+            specialDatesTableModel.addRow(new Object[] {
+                    specialDate.getId(),
+                    specialDate.getName(),
+                    specialDate.getDate().format(DateTimeFormatter.ISO_LOCAL_DATE),
+                    specialDate.getDescription(),
+                    specialDate.getAffectedCategory(),
+                    specialDate.getAmountIncrease(),
+                    budgetEffect,
+                    recurrenceTypeText
+            });
         }
     }
 
@@ -1575,57 +1426,24 @@ public class SettingsPanel extends JPanel {
         }
     }
 
-    /**
-     * 更新特殊日期分类下拉框的选项
-     */
     private void updateSpecialDateCategoryComboBox() {
-        try {
-            // 检查组件是否初始化
-            if (specialDateCategoryComboBox == null) {
-                System.err.println("特殊日期分类下拉框未初始化");
-                return;
+        if (specialDateCategoryComboBox == null || settingsService == null || settingsService.getSettings() == null) {
+            return;
+        }
+        String previouslySelected = (String) specialDateCategoryComboBox.getSelectedItem();
+        specialDateCategoryComboBox.removeAllItems();
+
+        List<String> expenseCategories = settingsService.getSettings().getExpenseCategories();
+        if (expenseCategories != null) {
+            for (String category : expenseCategories) {
+                specialDateCategoryComboBox.addItem(category);
             }
+        }
 
-            // 检查服务是否可用
-            if (settingsService == null) {
-                System.err.println("设置服务未初始化");
-                return;
-            }
-
-            Settings settings = settingsService.getSettings();
-            if (settings == null) {
-                System.err.println("无法获取设置对象");
-                return;
-            }
-
-            // 保存当前选中项
-            String previouslySelected = null;
-            if (specialDateCategoryComboBox.getSelectedItem() != null) {
-                previouslySelected = specialDateCategoryComboBox.getSelectedItem().toString();
-            }
-
-            // 清空并重新填充选项
-            specialDateCategoryComboBox.removeAllItems();
-
-            List<String> expenseCategories = settings.getExpenseCategories();
-            if (expenseCategories != null && !expenseCategories.isEmpty()) {
-                for (String category : expenseCategories) {
-                    if (category != null && !category.trim().isEmpty()) {
-                        specialDateCategoryComboBox.addItem(category);
-                    }
-                }
-            }
-
-            // 恢复之前的选择或默认选择第一项
-            if (previouslySelected != null) {
-                specialDateCategoryComboBox.setSelectedItem(previouslySelected);
-            } else if (specialDateCategoryComboBox.getItemCount() > 0) {
-                specialDateCategoryComboBox.setSelectedIndex(0);
-            }
-
-        } catch (Exception e) {
-            System.err.println("更新特殊日期分类下拉框时出错: " + e.getMessage());
-            e.printStackTrace();
+        if (previouslySelected != null) {
+            specialDateCategoryComboBox.setSelectedItem(previouslySelected);
+        } else if (specialDateCategoryComboBox.getItemCount() > 0) {
+            specialDateCategoryComboBox.setSelectedIndex(0);
         }
     }
 
