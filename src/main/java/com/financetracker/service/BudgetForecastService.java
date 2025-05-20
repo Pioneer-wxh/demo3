@@ -19,6 +19,7 @@ public class BudgetForecastService {
 
     private final TransactionService transactionService;
     private final SettingsService settingsService;
+    private final BudgetAdjustmentService budgetAdjustmentService;
 
     private double lastForecastedBudget = -1; // 存储最后一次预测的预算金额，初始为-1表示未预测过
     private Map<YearMonth, Double> forecastedBudgets = new HashMap<>(); // 存储每个月的预测预算
@@ -32,6 +33,7 @@ public class BudgetForecastService {
     public BudgetForecastService(TransactionService transactionService, SettingsService settingsService) {
         this.transactionService = transactionService;
         this.settingsService = settingsService;
+        this.budgetAdjustmentService = new BudgetAdjustmentService(settingsService);
 
         // 尝试初始化历史预测数据
         initializeHistoricalForecasts();
@@ -177,6 +179,25 @@ public class BudgetForecastService {
     }
 
     /**
+     * 获取包含特殊日期调整的下一个月的预算
+     * 
+     * @return 包含特殊日期调整的下一个月的预算金额
+     */
+    public double getAdjustedNextMonthBudget() {
+        YearMonth nextMonth = YearMonth.now().plusMonths(1);
+        double baseBudget = getBudgetForMonth(nextMonth);
+
+        // 获取特殊日期调整
+        Map<String, Double> categoryAdjustments = budgetAdjustmentService.getCategoryAdjustmentsForMonth(nextMonth);
+        double totalAdjustments = 0;
+        for (double adj : categoryAdjustments.values()) {
+            totalAdjustments += adj;
+        }
+
+        return baseBudget + totalAdjustments;
+    }
+
+    /**
      * 获取最后一次预测的预算金额
      * 
      * @return 最后一次预测的预算金额，如果未预测过则返回-1
@@ -202,10 +223,24 @@ public class BudgetForecastService {
             return false;
         }
 
-        settings.setMonthlyBudget(lastForecastedBudget);
+        // 获取下个月的年月对象
+        YearMonth nextMonth = YearMonth.now().plusMonths(1);
+
+        // 考虑特殊日期调整金额
+        Map<String, Double> categoryAdjustments = budgetAdjustmentService.getCategoryAdjustmentsForMonth(nextMonth);
+        double totalAdjustments = 0;
+        for (double adj : categoryAdjustments.values()) {
+            totalAdjustments += adj;
+        }
+
+        // 将预测预算和特殊日期调整金额相加作为最终预算
+        double finalBudget = lastForecastedBudget + totalAdjustments;
+        settings.setMonthlyBudget(finalBudget);
+
         boolean result = settingsService.saveSettings();
         if (result) {
-            LOGGER.log(Level.INFO, String.format("已将预测预算 %.2f 保存为下月基准预算", lastForecastedBudget));
+            LOGGER.log(Level.INFO, String.format("已将预测预算 %.2f 加上特殊日期调整 %.2f，最终 %.2f 保存为下月基准预算",
+                    lastForecastedBudget, totalAdjustments, finalBudget));
         } else {
             LOGGER.log(Level.WARNING, "保存预测预算到设置失败");
         }

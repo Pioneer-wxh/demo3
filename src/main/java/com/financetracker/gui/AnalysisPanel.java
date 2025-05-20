@@ -703,17 +703,36 @@ public class AnalysisPanel extends JPanel {
         summary.append(String.format("总支出: %.2f\n", totalExpense));
         summary.append(String.format("净收支: %.2f\n\n", netAmount));
 
-        // 获取当前显示月份对应的预算
+        // 获取当前显示月份对应的预算（包含特殊日期调整）
         YearMonth currentYearMonth = YearMonth.from(startDate);
         double monthlyBudget;
         String budgetSource;
 
-        // 使用预算预测服务获取该月预算
-        monthlyBudget = budgetForecastService.getBudgetForMonth(currentYearMonth);
-        if (monthlyBudget > 0) {
-            budgetSource = "预测";
+        // 获取包含特殊日期调整的预算
+        if (currentYearMonth.equals(YearMonth.now().plusMonths(1))) {
+            // 如果是下个月，使用包含特殊日期调整的最终预计预算
+            monthlyBudget = budgetForecastService.getAdjustedNextMonthBudget();
+            budgetSource = "预测(含特殊日期)";
+        } else if (currentYearMonth.equals(YearMonth.now())) {
+            // 当前月份
+            double baseBudget = budgetForecastService.getBudgetForMonth(currentYearMonth);
+            // 获取特殊日期调整
+            Map<String, Double> categoryAdjustments = budgetAdjustmentService
+                    .getCategoryAdjustmentsForMonth(currentYearMonth);
+            double totalAdjustments = 0;
+            for (double adj : categoryAdjustments.values()) {
+                totalAdjustments += adj;
+            }
+            monthlyBudget = baseBudget + totalAdjustments;
+            budgetSource = "预测(含特殊日期)";
         } else {
-            // 如果预测服务无法提供预算，则回退到设置中的基础预算
+            // 其他月份
+            monthlyBudget = budgetForecastService.getBudgetForMonth(currentYearMonth);
+            budgetSource = "预测";
+        }
+
+        // 如果无法获取预算，则回退到设置中的基础预算
+        if (monthlyBudget <= 0) {
             monthlyBudget = settingsService.getSettings().getMonthlyBudget();
             budgetSource = "基础";
         }
@@ -1208,7 +1227,7 @@ public class AnalysisPanel extends JPanel {
 
         // 使用下个月的预测预算（而不是当前设置的基础预算）
         double nextMonthBasebudget = budgetForecastService.getNextMonthBudget();
-        double finalProjectedExpenseBudget = nextMonthBasebudget + totalAdjustments;
+        double finalProjectedExpenseBudget = budgetForecastService.getAdjustedNextMonthBudget();
         summaryTextBuilder
                 .append(String.format("%s月最终预计支出预算: %.2f %s\n", nextMonthName, finalProjectedExpenseBudget, currency));
 
@@ -1279,7 +1298,7 @@ public class AnalysisPanel extends JPanel {
         for (double adj : categoryAdjustments.values()) {
             totalAdjustments += adj;
         }
-        double finalProjectedExpenseBudget = nextMonthBudget + totalAdjustments;
+        double finalProjectedExpenseBudget = budgetForecastService.getAdjustedNextMonthBudget();
 
         if (currentSettings != null && !expenseCategories.isEmpty()) {
             Map<String, Double> historicalDistPercentages = calculateCategoryDistribution(6);
