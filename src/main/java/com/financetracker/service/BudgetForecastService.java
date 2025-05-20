@@ -46,7 +46,7 @@ public class BudgetForecastService {
     private void initializeHistoricalForecasts() {
         Settings settings = settingsService.getSettings();
         if (settings == null) {
-            LOGGER.log(Level.WARNING, "无法获取设置，历史预测数据初始化失败");
+            LOGGER.log(Level.SEVERE, "无法获取设置，历史预测数据初始化失败");
             return;
         }
 
@@ -291,5 +291,188 @@ public class BudgetForecastService {
      */
     private double calculateAverageExpense(int months) {
         return calculateAverageExpenseForMonth(YearMonth.now(), months);
+    }
+
+    // 预算分析结果数据结构
+    public static class BudgetAnalysisResult {
+        public double meanBudget; // 仅用于参考
+        public double baseBudget; // 基础预算（线性回归）
+        public double finalBudget; // 最终预算 = baseBudget + specialDayTotal + savingGoalTotal
+        public List<SpecialDayDetail> specialDayDetails = new java.util.ArrayList<>();
+        public double specialDayTotal;
+        public List<SavingGoalDetail> savingGoalDetails = new java.util.ArrayList<>();
+        public double savingGoalTotal;
+        public Map<String, Double> categoryAllocations = new java.util.HashMap<>();
+        public List<com.financetracker.model.SpecialDate> upcomingSpecialDates = new java.util.ArrayList<>();
+        public double avgIncome;
+        public double avgExpense;
+        public double avgBalance;
+    }
+    public static class SpecialDayDetail {
+        public String name;
+        public String category;
+        public double amount;
+        public String description;
+    }
+    public static class SavingGoalDetail {
+        public String name;
+        public double monthlyContribution;
+        public String description;
+    }
+
+    /**
+     * 综合分析下月预算，返回所有明细
+     */
+    public BudgetAnalysisResult analyzeNextMonthBudget() {
+        BudgetAnalysisResult result = new BudgetAnalysisResult();
+        YearMonth nextMonth = YearMonth.now().plusMonths(1);
+        int months = 3;
+        // 1. 计算均值预算
+        result.meanBudget = calcMeanExpense(nextMonth, months);
+        // 2. 计算基础预算（线性回归）
+        result.baseBudget = calcLinearRegressionExpense(nextMonth, months);
+        // 3. 统计special day
+        Map<String, Double> specialDayMap = budgetAdjustmentService.getCategoryAdjustmentsForMonth(nextMonth);
+        result.specialDayTotal = 0;
+        for (Map.Entry<String, Double> entry : specialDayMap.entrySet()) {
+            SpecialDayDetail detail = new SpecialDayDetail();
+            detail.category = entry.getKey();
+            detail.amount = entry.getValue();
+            // 查找special date name/desc
+            for (com.financetracker.model.SpecialDate sd : settingsService.getSettings().getSpecialDates()) {
+                if (sd.getAffectedCategory() != null && sd.getAffectedCategory().equals(entry.getKey())) {
+                    YearMonth sdMonth = YearMonth.from(sd.getDate());
+                    if (sdMonth.equals(nextMonth)) {
+                        detail.name = sd.getName();
+                        detail.description = sd.getDescription();
+                        break;
+                    }
+                }
+            }
+            result.specialDayDetails.add(detail);
+            result.specialDayTotal += entry.getValue();
+        }
+        // 4. 统计saving goal
+        result.savingGoalTotal = 0;
+        for (com.financetracker.model.SavingGoal goal : settingsService.getSettings().getSavingGoals()) {
+            if (goal.isActive() && !goal.isCompleted() && goal.getMonthlyContribution() > 0) {
+                LocalDate start = goal.getStartDate();
+                LocalDate end = goal.getTargetDate();
+                LocalDate monthDate = nextMonth.atDay(1);
+                if ((start == null || !monthDate.isBefore(start)) && (end == null || !monthDate.isAfter(end))) {
+                    SavingGoalDetail detail = new SavingGoalDetail();
+                    detail.name = goal.getName();
+                    detail.monthlyContribution = goal.getMonthlyContribution();
+                    detail.description = goal.getDescription();
+                    result.savingGoalDetails.add(detail);
+                    result.savingGoalTotal += goal.getMonthlyContribution();
+                }
+            }
+        }
+        // 5. 最终预算 = 基础预算 + special day汇总 + saving goal汇总
+        result.finalBudget = result.baseBudget + result.specialDayTotal + result.savingGoalTotal;
+        // 6. 类别分配
+        Map<String, Double> categoryRatios = calcCategoryRatios(nextMonth, months);
+        for (Map.Entry<String, Double> entry : categoryRatios.entrySet()) {
+            result.categoryAllocations.put(entry.getKey(), result.baseBudget * entry.getValue());
+        }
+        // 7. special day金额加到对应分类
+        for (SpecialDayDetail detail : result.specialDayDetails) {
+            result.categoryAllocations.put(detail.category, result.categoryAllocations.getOrDefault(detail.category, 0.0) + detail.amount);
+        }
+        // 8. 统计upcoming special date
+        for (com.financetracker.model.SpecialDate sd : settingsService.getSettings().getSpecialDates()) {
+            YearMonth sdMonth = YearMonth.from(sd.getDate());
+            if (sdMonth.equals(nextMonth)) {
+                result.upcomingSpecialDates.add(sd);
+            }
+        }
+        // 9. 平均收入/支出/结余
+        double totalIncome = 0, totalExpense = 0;
+        int count = 0;
+        for (int i = 1; i <= months; i++) {
+            YearMonth m = nextMonth.minusMonths(i);
+            List<Transaction> txs = transactionService.getTransactionsForMonth(m.getYear(), m.getMonthValue());
+            double income = transactionService.getTotalIncome(txs);
+            double expense = txs.stream().filter(t -> t.isExpense() && (t.getCategory() == null || !t.getCategory().equals("Saving Goal"))).mapToDouble(Transaction::getAmount).sum();
+            totalIncome += income;
+            totalExpense += expense;
+            count++;
+        }
+        if (count > 0) {
+            result.avgIncome = totalIncome / count;
+            result.avgExpense = totalExpense / count;
+            result.avgBalance = result.avgIncome - result.avgExpense;
+        }
+        return result;
+    }
+
+    // 计算均值预算（不含Saving Goal）
+    private double calcMeanExpense(YearMonth targetMonth, int months) {
+        double total = 0;
+        int count = 0;
+        for (int i = 1; i <= months; i++) {
+            YearMonth m = targetMonth.minusMonths(i);
+            List<Transaction> txs = transactionService.getTransactionsForMonth(m.getYear(), m.getMonthValue());
+            double expense = txs.stream().filter(t -> t.isExpense() && (t.getCategory() == null || !t.getCategory().equals("Saving Goal"))).mapToDouble(Transaction::getAmount).sum();
+            total += expense;
+            count++;
+        }
+        return count > 0 ? total / count : 0;
+    }
+
+    // 计算线性回归预算（不含Saving Goal）
+    private double calcLinearRegressionExpense(YearMonth targetMonth, int months) {
+        double[] x = new double[months];
+        double[] y = new double[months];
+        for (int i = 1; i <= months; i++) {
+            x[i-1] = i;
+            YearMonth m = targetMonth.minusMonths(months - i + 1);
+            List<Transaction> txs = transactionService.getTransactionsForMonth(m.getYear(), m.getMonthValue());
+            y[i-1] = txs.stream().filter(t -> t.isExpense() && (t.getCategory() == null || !t.getCategory().equals("Saving Goal"))).mapToDouble(Transaction::getAmount).sum();
+        }
+        // 线性回归 y = a + bx, 预测x=months+1
+        double sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+        for (int i = 0; i < months; i++) {
+            sumX += x[i];
+            sumY += y[i];
+            sumXY += x[i] * y[i];
+            sumXX += x[i] * x[i];
+        }
+        double b = (months * sumXY - sumX * sumY) / (months * sumXX - sumX * sumX + 1e-8);
+        double a = (sumY - b * sumX) / months;
+        return a + b * (months + 1);
+    }
+
+    // 计算类别占比（不含Saving Goal）
+    private Map<String, Double> calcCategoryRatios(YearMonth targetMonth, int months) {
+        Map<String, Double> sumByCat = new java.util.HashMap<>();
+        double total = 0;
+        for (int i = 1; i <= months; i++) {
+            YearMonth m = targetMonth.minusMonths(i);
+            List<Transaction> txs = transactionService.getTransactionsForMonth(m.getYear(), m.getMonthValue());
+            for (Transaction t : txs) {
+                if (t.isExpense() && t.getCategory() != null && !t.getCategory().equals("Saving Goal")) {
+                    sumByCat.put(t.getCategory(), sumByCat.getOrDefault(t.getCategory(), 0.0) + t.getAmount());
+                    total += t.getAmount();
+                }
+            }
+        }
+        Map<String, Double> ratio = new java.util.HashMap<>();
+        for (Map.Entry<String, Double> entry : sumByCat.entrySet()) {
+            ratio.put(entry.getKey(), total > 0 ? entry.getValue() / total : 0);
+        }
+        return ratio;
+    }
+
+    /**
+     * 返回预算分解公式字符串，便于UI或控制台直接输出
+     */
+    public String getBudgetFormulaString(BudgetAnalysisResult result) {
+        if (result == null) return "";
+        return String.format(
+            "基础预算（线性回归）：￥%.2f\n+ Special Day 汇总：￥%.2f\n+ Saving Goal 汇总：￥%.2f\n= 最终预算：￥%.2f",
+            result.baseBudget, result.specialDayTotal, result.savingGoalTotal, result.finalBudget
+        );
     }
 }

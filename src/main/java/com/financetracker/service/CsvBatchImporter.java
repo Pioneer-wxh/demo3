@@ -62,7 +62,6 @@ public class CsvBatchImporter {
 
         if (!file.exists() || !file.isFile() || !file.getName().toLowerCase().endsWith(".csv")) {
             result.failedFileCount = 1; // Mark this file as failed
-            System.err.println("Skipping non-CSV or non-existent file: " + file.getName());
             return result;
         }
 
@@ -70,13 +69,11 @@ public class CsvBatchImporter {
             List<String> headers = readCsvHeaders(file.getAbsolutePath());
             if (headers == null || headers.isEmpty()) {
                 result.failedFileCount = 1;
-                System.err.println("Failed to read headers from: " + file.getName());
                 return result;
             }
             String[] columnMappings = autoDetectColumns(file.getAbsolutePath(), headers);
             if (columnMappings[0] == null || columnMappings[1] == null || columnMappings[2] == null) {
                 result.failedFileCount = 1;
-                System.err.println("Could not auto-detect required columns (Date, Amount, Description) in: " + file.getName());
                 return result;
             }
 
@@ -99,22 +96,17 @@ public class CsvBatchImporter {
                 if (successfullyAddedCount > 0) {
                     result.successFileCount = 1;
                     result.totalRecordCount = successfullyAddedCount;
-                    System.out.println("Successfully imported and added " + successfullyAddedCount + " transactions from " + file.getName());
                 } else {
-                    System.out.println("No new transactions were successfully added from " + file.getName());
                     // If some were parsed but none added, it's not a full file failure yet
                 }
             } else if (importedTransactions != null && importedTransactions.isEmpty()) {
-                System.out.println("No new transactions parsed from " + file.getName());
+                // File was parsed, but no valid transactions found or all were skipped.
             } else { // importedTransactions is null, indicating parsing error
                 result.failedFileCount = 1;
-                System.err.println("Failed to parse transactions from " + file.getName());
             }
 
         } catch (Exception e) {
             result.failedFileCount = 1;
-            System.err.println("Error processing file " + file.getName() + ": " + e.getMessage());
-            e.printStackTrace();
         }
         return result;
     }
@@ -131,7 +123,6 @@ public class CsvBatchImporter {
         for (File file : files) {
             if (!file.exists() || !file.isFile() || !file.getName().toLowerCase().endsWith(".csv")) {
                 result.failedFileCount++;
-                System.err.println("Skipping non-CSV or non-existent file: " + file.getName());
                 continue;
             }
 
@@ -139,13 +130,11 @@ public class CsvBatchImporter {
                 List<String> headers = readCsvHeaders(file.getAbsolutePath());
                 if (headers == null || headers.isEmpty()) {
                     result.failedFileCount++;
-                    System.err.println("Failed to read headers from: " + file.getName());
                     continue;
                 }
                 String[] columnMappings = autoDetectColumns(file.getAbsolutePath(), headers);
                 if (columnMappings[0] == null || columnMappings[1] == null || columnMappings[2] == null) {
                     result.failedFileCount++;
-                    System.err.println("Could not auto-detect required columns (Date, Amount, Description) in: " + file.getName());
                     continue;
                 }
 
@@ -166,24 +155,17 @@ public class CsvBatchImporter {
                     if (transactionService.saveAllTransactions(existingTransactions)) { // Changed saveTransactions to saveAllTransactions
                         result.successFileCount++;
                         result.totalRecordCount += importedTransactions.size();
-                        System.out.println("Successfully imported and saved " + importedTransactions.size() + " transactions from " + file.getName());
                     } else {
                         result.failedFileCount++;
-                        System.err.println("Failed to save transactions after importing from " + file.getName());
                     }
                 } else if (importedTransactions != null && importedTransactions.isEmpty()) {
                     // File was parsed, but no valid transactions found or all were skipped.
-                    System.out.println("No new transactions imported from " + file.getName());
-                    // Not necessarily a failed file, but no records added.
                 } else { // importedTransactions is null, indicating parsing error
                     result.failedFileCount++;
-                     System.err.println("Failed to parse transactions from " + file.getName());
                 }
 
             } catch (Exception e) {
                 result.failedFileCount++;
-                System.err.println("Error processing file " + file.getName() + ": " + e.getMessage());
-                e.printStackTrace();
             }
         }
 
@@ -241,7 +223,6 @@ public class CsvBatchImporter {
                 }
             }
         } catch (Exception e) {
-            e.printStackTrace();
             return null;
         }
         return headers;
@@ -411,7 +392,6 @@ public class CsvBatchImporter {
             // ignore
         }
 
-        System.err.println("Failed to parse date string with all common formats: " + dateStr);
         return null; 
     }
 
@@ -541,12 +521,6 @@ public class CsvBatchImporter {
                     .setTrim(true)
                     .build())) {
             
-            System.out.println("Parsing CSV file: " + filePath);
-            System.out.println("Using Date Column: '" + dateColumn + "', Amount Column: '" + amountColumn + 
-                               " ', Description Column: '" + descriptionColumn + "'");
-            if (categoryColumn != null) System.out.println("Using Category Column: '" + categoryColumn + "'");
-            System.out.println("Using Date Format: " + dateFormat);
-
             for (CSVRecord record : csvParser) {
                 linesProcessed++;
                 try {
@@ -557,7 +531,6 @@ public class CsvBatchImporter {
                     } catch (Exception e) {
                         date = tryParseDate(dateStr); // Fallback to other common formats
                         if (date == null) {
-                            System.err.println("Line " + linesProcessed + ": Skipping record due to unparsable date: " + dateStr);
                             continue;
                         }
                     }
@@ -569,7 +542,6 @@ public class CsvBatchImporter {
                     try {
                         amountVal = Double.parseDouble(amountStr);
                     } catch (NumberFormatException e) {
-                        System.err.println("Line " + linesProcessed + ": Skipping record due to unparsable amount: " + amountStr);
                         continue;
                     }
 
@@ -587,7 +559,7 @@ public class CsvBatchImporter {
                          // If amount was negative (strong indicator of expense) but auto-detection says income, log a warning.
                          // Potentially prioritize the sign of the amount or a more sophisticated rule.
                          // For now, let autoDetectIsExpense based on description/category override if it finds income signals.
-                        System.out.println("Line " + linesProcessed + ": Amount was negative but description/category suggests income. Review: " + description);
+                        continue;
                     } else if (isExpenseBasedOnSign) {
                         finalIsExpense = true; // Negative amount is a strong signal for expense
                     }
@@ -615,18 +587,14 @@ public class CsvBatchImporter {
                     
                     importedTransactions.add(transaction);
                 } catch (IllegalArgumentException iae) { // Catch issues from record.get() if column name is bad
-                    System.err.println("Line " + linesProcessed + ": Skipping record due to missing or invalid column in CSV: " + iae.getMessage());
+                    continue;
                 } catch (Exception e) {
-                    System.err.println("Line " + linesProcessed + ": Skipping record due to unexpected error: " + e.getMessage());
-                    e.printStackTrace();
+                    continue;
                 }
             }
-            System.out.println("Finished parsing. Imported " + importedTransactions.size() + " transactions from " + filePath);
             return importedTransactions;
 
         } catch (IOException e) {
-            System.err.println("Error reading CSV file " + filePath + ": " + e.getMessage());
-            e.printStackTrace();
             return null; // Indicate failure to parse file
         }
     }

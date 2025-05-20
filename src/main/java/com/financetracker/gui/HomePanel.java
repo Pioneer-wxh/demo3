@@ -274,9 +274,14 @@ public class HomePanel extends JPanel {
             overallAccountBalanceLabel.setText("Overall Account Balance: Error - Settings not available");
             return;
         }
-        String balanceText = String.format("Overall Account Balance: %.2f %s", settings.getOverallAccountBalance(), settings.getDefaultCurrency());
+        // 新增：如果没有任何交易，强制显示为0
+        double displayBalance = settings.getOverallAccountBalance();
+        if (transactionService != null && transactionService.getAllTransactions().isEmpty()) {
+            displayBalance = 0.0;
+        }
+        String balanceText = String.format("Overall Account Balance: %.2f %s", displayBalance, settings.getDefaultCurrency());
         overallAccountBalanceLabel.setText(balanceText);
-        overallAccountBalanceLabel.setForeground(settings.getOverallAccountBalance() < 0 ? Color.RED : Color.GREEN); // Green for overall positive
+        overallAccountBalanceLabel.setForeground(displayBalance < 0 ? Color.RED : Color.GREEN); // Green for overall positive
     }
 
     /**

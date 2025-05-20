@@ -137,18 +137,15 @@ public class FinancialCycleService {
     public boolean performMonthEndClosing() {
         Settings currentSettings = settingsService.getSettings();
         if (currentSettings == null) {
-            LOGGER.log(Level.WARNING, "Settings not available for month-end closing.");
+            LOGGER.log(Level.SEVERE, "Settings not available for month-end closing.");
             return false;
         }
         LocalDate today = LocalDate.now();
         YearMonth currentProcessingYearMonth;
         String lastClosedMonthStr = currentSettings.getLastMonthClosed();
-
         if (lastClosedMonthStr == null || lastClosedMonthStr.isEmpty()) {
-            List<Transaction> allTransactions = transactionService.getAllTransactions(); // Use injected
-                                                                                         // transactionService
+            List<Transaction> allTransactions = transactionService.getAllTransactions();
             if (allTransactions.isEmpty()) {
-                LOGGER.log(Level.INFO, "No transactions available to determine the first month for closing.");
                 return false;
             }
             allTransactions.sort(Comparator.comparing(Transaction::getDate));
@@ -240,6 +237,15 @@ public class FinancialCycleService {
             return settingsService.saveSettings();
         }
         LOGGER.log(Level.INFO, "No new financial months were eligible for closing.");
+        // 新增：月结后自动为新月生成saving goal交易
+        // 获取当前月的年月
+        Settings settings = settingsService.getSettings();
+        if (settings != null) {
+            YearMonth currentMonth = YearMonth.now();
+            int savingsTransactionDay = settings.getBudgetStartDay() > 0 ? settings.getBudgetStartDay() : 1;
+            // 分类名可自定义为"Saving Goal"或"Savings"
+            processMonthlySavingsContributions(currentMonth, savingsTransactionDay, "Saving Goal");
+        }
         return false;
     }
 }

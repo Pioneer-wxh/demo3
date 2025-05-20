@@ -415,4 +415,41 @@ public class TransactionService {
         double expenses = getTotalExpense(currentMonthTransactions);
         return budget - expenses;
     }
+
+    /**
+     * 为指定SavingGoal生成所有月度交易（从startDate到targetDate，每月一笔，category为"Saving Goal"，notes带SavingGoalId）
+     */
+    public void generateTransactionsForSavingGoal(com.financetracker.model.SavingGoal goal) {
+        if (goal == null || goal.getMonthlyContribution() <= 0 || goal.getStartDate() == null || goal.getTargetDate() == null) {
+            return;
+        }
+        List<Transaction> allTransactions = getAllTransactions();
+        java.time.LocalDate date = goal.getStartDate();
+        java.time.LocalDate end = goal.getTargetDate();
+        double monthly = goal.getMonthlyContribution();
+        double total = 0;
+        int count = 0;
+        while (!date.isAfter(end) && total < goal.getTargetAmount()) {
+            Transaction t = new Transaction();
+            t.setId(java.util.UUID.randomUUID().toString());
+            t.setDate(date);
+            t.setAmount(monthly);
+            t.setCategory("Saving Goal");
+            t.setExpense(true);
+            t.setNotes("SavingGoalId:" + goal.getId());
+            addTransaction(t);
+            total += monthly;
+            date = date.plusMonths(1);
+            count++;
+        }
+    }
+
+    /**
+     * 删除所有与指定SavingGoal相关的自动生成交易（通过notes字段的SavingGoalId标记）
+     */
+    public void deleteTransactionsForSavingGoal(String savingGoalId) {
+        List<Transaction> allTransactions = getAllTransactions();
+        allTransactions.removeIf(t -> t.getNotes() != null && t.getNotes().contains("SavingGoalId:" + savingGoalId));
+        saveAllTransactions(allTransactions);
+    }
 }

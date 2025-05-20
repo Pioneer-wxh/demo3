@@ -1,7 +1,7 @@
 我在运行程序的过程中发现了以下几个问题，首先主要是分析模块的budget of next month标签页，我下面给你描述问题和修改建议，请你做出修改：
 一、budget forecast&adjustments模块
 1：算法计算：
-budget forecast&adjustments模块应该调用ai读取E:\code\Java\test2\demo3\data\transactions.csv文件中当前预计月份的前三个月的支出情况(支出应该除去saving goal类别的支出)，使用逻辑回归来计算出预计月份应该支出多少钱，也就是我们的budegt。
+budget forecast&adjustments模块应该调用ai读取E:\code\Java\test2\demo3\data\transactions.csv文件中当前预计月份的前三个月的支出情况(支出应该除去saving goal类别的支出)，使用线性回归来计算出预计月份应该支出多少钱，也就是我们的budegt。
 同时这个budegt要和special day联动，也就是说如果预计月份有special day，那么budegt应该加上special day设置的金额，同时注意如果预计月份有多个special day，那么这个金额是可以累加的，而不是说，有多个special day但是最终budget只加上一个special day的金额。
 这个budegt还应该和saving goals联动，budegt应该加上一个saving goal中monthly constribution的金额。如果有预计月份中多个saving goal，那么budegt应该分别加上    saving goal中monthly constribution的金额
 

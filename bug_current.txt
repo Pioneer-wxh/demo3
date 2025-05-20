@@ -1,2 +1,7 @@
 我在运行程序的过程中发现了以下几个问题，首先主要是分析模块的current month标签页，我下面给你描述问题和修改建议，请你做出修改：
 1.current month标签页的monthly summary模块，要包括总收入，总支出以及净收支即可
+2.current month标签页的monthly summary模块模块显示内容
+1）总收入，总支出以及净收支
+2）如果当前月有special day，显示special day 的名称，描述
+4）如果当前月有saving goal，显示saving goals的名称以及对应金额
+

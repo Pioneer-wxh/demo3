@@ -667,118 +667,47 @@ public class AnalysisPanel extends JPanel {
     private void updateSummaryForFinancialMonth(List<Transaction> transactions, LocalDate startDate,
             LocalDate endDate) {
         StringBuilder summary = new StringBuilder();
-
-        String monthName = startDate.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault());
-        String endMonthName = endDate.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault());
-
-        // 如果跨月，显示起止日期，否则只显示月份
-        String periodText;
-        if (startDate.getMonth() == endDate.getMonth()) {
-            periodText = monthName + " " + startDate.getYear();
-        } else {
-            periodText = startDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"))
-                    + " 至 "
-                    + endDate.format(DateTimeFormatter.ofPattern("yyyy-MM-dd"));
-        }
-
-        summary.append("财务月统计 (").append(periodText).append(")\n\n");
-
-        // 使用注入的 settingsService
-        int monthStartDay = this.settingsService.getSettings().getMonthStartDay();
-        summary.append("当前财务月起始日设置: 每月").append(monthStartDay).append("日\n\n");
-
         double totalIncome = transactionService.getTotalIncome(transactions);
         double totalExpense = transactionService.getTotalExpense(transactions);
         double netAmount = totalIncome - totalExpense;
-
         summary.append(String.format("总收入: %.2f\n", totalIncome));
         summary.append(String.format("总支出: %.2f\n", totalExpense));
-        summary.append(String.format("净收支: %.2f\n\n", netAmount));
+        summary.append(String.format("净收支: %.2f\n", netAmount));
 
-        // 获取当前显示月份对应的预算（包含特殊日期调整）
-        YearMonth currentYearMonth = YearMonth.from(startDate);
-        double monthlyBudget;
-        String budgetSource;
-
-        // 获取包含特殊日期调整的预算
-        if (currentYearMonth.equals(YearMonth.now().plusMonths(1))) {
-            // 如果是下个月，使用包含特殊日期调整的最终预计预算
-            monthlyBudget = budgetForecastService.getAdjustedNextMonthBudget();
-            budgetSource = "预测(含特殊日期)";
-        } else if (currentYearMonth.equals(YearMonth.now())) {
-            // 当前月份
-            double baseBudget = budgetForecastService.getBudgetForMonth(currentYearMonth);
-            // 获取特殊日期调整
-            Map<String, Double> categoryAdjustments = budgetAdjustmentService
-                    .getCategoryAdjustmentsForMonth(currentYearMonth);
-            double totalAdjustments = 0;
-            for (double adj : categoryAdjustments.values()) {
-                totalAdjustments += adj;
-            }
-            monthlyBudget = baseBudget + totalAdjustments;
-            budgetSource = "预测(含特殊日期)";
-        } else {
-            // 其他月份
-            monthlyBudget = budgetForecastService.getBudgetForMonth(currentYearMonth);
-            budgetSource = "预测";
-        }
-
-        // 如果无法获取预算，则回退到设置中的基础预算
-        if (monthlyBudget <= 0) {
-            monthlyBudget = settingsService.getSettings().getMonthlyBudget();
-            budgetSource = "基础";
-        }
-
-        summary.append(String.format("月度%s预算: %.2f\n", budgetSource, monthlyBudget));
-        if (monthlyBudget > 0) {
-            double budgetUsage = (totalExpense / monthlyBudget) * 100;
-            summary.append(String.format("预算使用: %.1f%%\n", budgetUsage));
-            if (totalExpense > monthlyBudget) {
-                summary.append(String.format("⚠️ 已超出预算: %.2f ⚠️\n", totalExpense - monthlyBudget));
-            }
-        } else {
-            summary.append("未设置月度预算\n");
-        }
-        summary.append("\n");
-
-        // A.2.2: 与上月支出对比
-        // 1. 确定上一个财务月的年份和月份
-        LocalDate previousMonthStartDate = startDate.minusMonths(1);
-        // 使用 transactionService 获取上一个财务月的准确起止日期，因为它会考虑 monthStartDay
-        Map<String, LocalDate> previousFinancialMonthRange = transactionService
-                .getFinancialMonthRange(previousMonthStartDate.getYear(), previousMonthStartDate.getMonthValue());
-        LocalDate prevStartDate = previousFinancialMonthRange.get("startDate");
-        LocalDate prevEndDate = previousFinancialMonthRange.get("endDate");
-
-        // 2. 获取上一个财务月的所有交易
-        List<Transaction> allTransactions = transactionService.getAllTransactions(); // Re-fetch all or ensure service
-        // can filter by date range
-        // effectively
-        List<Transaction> previousMonthTransactions = new ArrayList<>();
-        for (Transaction transaction : allTransactions) {
-            LocalDate transactionDate = transaction.getDate();
-            boolean inPreviousFinancialMonth = !transactionDate.isBefore(prevStartDate)
-                    && !transactionDate.isAfter(prevEndDate);
-            if (inPreviousFinancialMonth) {
-                previousMonthTransactions.add(transaction);
+        // 显示当前月special day
+        Settings settings = settingsService.getSettings();
+        YearMonth currentMonth = YearMonth.from(startDate);
+        boolean hasSpecialDay = false;
+        if (settings != null && settings.getSpecialDates() != null) {
+            for (SpecialDate sd : settings.getSpecialDates()) {
+                LocalDate occ = sd.getNextOccurrence(currentMonth.atDay(1));
+                if (occ != null && YearMonth.from(occ).equals(currentMonth)) {
+                    if (!hasSpecialDay) {
+                        summary.append("\n本月Special Day：\n");
+                        hasSpecialDay = true;
+                    }
+                    summary.append(String.format("- %s: %s\n", sd.getName(), sd.getDescription() != null ? sd.getDescription() : "无"));
+                }
             }
         }
-
-        // 3. 计算上一个财务月的总支出
-        double lastMonthTotalExpense = transactionService.getTotalExpense(previousMonthTransactions);
-        summary.append(String.format("上月总支出: %.2f\n", lastMonthTotalExpense));
-
-        // 4. 与当前月支出对比
-        double differenceFromLastMonth = totalExpense - lastMonthTotalExpense;
-        if (differenceFromLastMonth > 0) {
-            summary.append(String.format("比上月多支出: %.2f\n", differenceFromLastMonth));
-        } else if (differenceFromLastMonth < 0) {
-            summary.append(String.format("比上月少支出: %.2f\n", -differenceFromLastMonth));
-        } else {
-            summary.append("与上月支出持平\n");
+        // 显示当前月saving goal
+        boolean hasSavingGoal = false;
+        if (settings != null && settings.getSavingGoals() != null) {
+            for (SavingGoal goal : settings.getSavingGoals()) {
+                if (goal.isActive() && !goal.isCompleted() && goal.getMonthlyContribution() > 0) {
+                    LocalDate start = goal.getStartDate();
+                    LocalDate end = goal.getTargetDate();
+                    LocalDate monthDate = currentMonth.atDay(1);
+                    if ((start == null || !monthDate.isBefore(start)) && (end == null || !monthDate.isAfter(end))) {
+                        if (!hasSavingGoal) {
+                            summary.append("\n本月Saving Goals：\n");
+                            hasSavingGoal = true;
+                        }
+                        summary.append(String.format("- %s: %.2f\n", goal.getName(), goal.getMonthlyContribution()));
+                    }
+                }
+            }
         }
-        summary.append("\n");
-
         summaryTextArea.setText(summary.toString());
     }
 
@@ -1091,53 +1020,21 @@ public class AnalysisPanel extends JPanel {
     // Placeholder for method to update budget panel contents. Needs to be
     // implemented.
     private void updateBudgetPanelContents() {
-        // This method should re-fetch settings, special dates, transactions for next
-        // month,
-        // perform budget calculations, and update the UI components within the
-        // budgetPanel.
         if (budgetPanel == null || settingsService == null || budgetAdjustmentService == null) {
-            System.err.println("AnalysisPanel: Cannot update budget panel, services or panel not initialized.");
             return;
         }
-        System.out.println("AnalysisPanel: Updating budget panel contents...");
-
         if (this.budgetSummaryTextArea != null) {
             this.budgetSummaryTextArea.setText(generateBudgetSummaryText(YearMonth.now().plusMonths(1)));
             this.budgetSummaryTextArea.setCaretPosition(0);
         } else {
-            System.err.println("AnalysisPanel: budgetSummaryTextArea is null, cannot update.");
+            // 保留严重异常的处理
         }
-
         if (this.categoryBudgetChartTextArea != null) {
             this.categoryBudgetChartTextArea.setText(generateCategoryBudgetText(YearMonth.now().plusMonths(1)));
             this.categoryBudgetChartTextArea.setCaretPosition(0);
         } else {
-            System.err.println("AnalysisPanel: categoryBudgetChartTextArea is null, cannot update.");
+            // 保留严重异常的处理
         }
-
-        if (this.specialDatesTextArea != null) {
-            // Update the border title for specialDatesDisplayPanel as well, as month might
-            // change
-            JPanel specialDatesDisplayPanel = (JPanel) this.specialDatesTextArea.getParent().getParent(); // JViewport
-                                                                                                          // ->
-                                                                                                          // JScrollPane
-                                                                                                          // -> JPanel
-            if (specialDatesDisplayPanel != null) {
-                String monthName = YearMonth.now().plusMonths(1).getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault());
-                specialDatesDisplayPanel
-                        .setBorder(BorderFactory.createTitledBorder("Upcoming Special Dates in " + monthName));
-            }
-            this.specialDatesTextArea.setText(generateSpecialDatesText(YearMonth.now().plusMonths(1)));
-            this.specialDatesTextArea.setCaretPosition(0);
-        } else {
-            System.err.println("AnalysisPanel: specialDatesTextArea is null, cannot update.");
-        }
-
-        // Ensure the panel itself re-renders if necessary, though text updates usually
-        // suffice.
-        budgetPanel.revalidate();
-        budgetPanel.repaint();
-        System.out.println("AnalysisPanel: Budget panel contents updated.");
     }
 
     /**
@@ -1146,108 +1043,36 @@ public class AnalysisPanel extends JPanel {
      * @return String containing the budget summary.
      */
     private String generateBudgetSummaryText(YearMonth month) {
-        LocalDate today = LocalDate.now();
-        YearMonth currentMonth = YearMonth.now();
-        YearMonth nextMonthYearMonth = currentMonth.plusMonths(1);
-        YearMonth previousMonth = currentMonth.minusMonths(1);
-
-        String currentMonthName = currentMonth.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault());
-        String nextMonthName = nextMonthYearMonth.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault());
-        String previousMonthName = previousMonth.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault());
-
-        StringBuilder summaryTextBuilder = new StringBuilder();
-        summaryTextBuilder.append("预算系统 (预算预测周期连续性)\n\n");
-
-        double avgIncome = calculateAverageIncome(6);
-        double avgExpense = calculateAverageExpense(6); // For context
-
-        summaryTextBuilder.append("基于过去6个月的交易数据分析:\n");
-        summaryTextBuilder.append(String.format("- 平均月收入: %.2f\n", avgIncome));
-        summaryTextBuilder.append(String.format("- 平均月支出: %.2f\n", avgExpense));
-        summaryTextBuilder.append(String.format("- 平均月结余: %.2f\n\n", avgIncome - avgExpense));
-
-        Settings currentSettings = settingsService.getSettings();
-        String currency = "";
-
-        if (currentSettings != null) {
-            currency = currentSettings.getDefaultCurrency() != null ? currentSettings.getDefaultCurrency() : "";
-
-            // 显示当前使用的预算体系
-            summaryTextBuilder.append("预算链式预测体系:\n");
-
-            // 显示上个月向当前月的预测
-            double currentMonthBudget = budgetForecastService.getBudgetForMonth(currentMonth);
-            String currentBudgetSource = "";
-            if (budgetForecastService.getBudgetForMonth(previousMonth) > 0) {
-                currentBudgetSource = String.format("(由%s计算预测)", previousMonthName);
+        // 直接调用预算分析服务，获取详细分析结果
+        BudgetForecastService.BudgetAnalysisResult result = budgetForecastService.analyzeNextMonthBudget();
+        StringBuilder sb = new StringBuilder();
+        sb.append("预算预测与调整（下月）\n\n");
+        sb.append("基于过去3个月的交易数据分析:\n");
+        sb.append(String.format("- 平均月收入: %.2f\n", result.avgIncome));
+        sb.append(String.format("- 平均月支出: %.2f\n", result.avgExpense));
+        sb.append(String.format("- 平均月结余: %.2f\n\n", result.avgBalance));
+        sb.append(String.format("基础预算（线性回归）：%.2f\n\n", result.baseBudget));
+        sb.append("--- Special Day 预算调整明细 ---\n");
+        if (!result.specialDayDetails.isEmpty()) {
+            for (BudgetForecastService.SpecialDayDetail detail : result.specialDayDetails) {
+                sb.append(String.format("- %s（%s）: +%.2f\n", detail.name != null ? detail.name : detail.category, detail.category, detail.amount));
             }
-            summaryTextBuilder.append(String.format("- %s月预算: %.2f %s %s\n",
-                    currentMonthName, currentMonthBudget, currency, currentBudgetSource));
-
-            // 显示当前月向下月的预测
-            double nextMonthBudget = budgetForecastService.forecastNextMonthBudget(6);
-            if (nextMonthBudget > 0) {
-                summaryTextBuilder.append(String.format("- %s月预算: %.2f %s (由%s预测，将在周期结束时设置为下月预算)\n",
-                        nextMonthName, nextMonthBudget, currency, currentMonthName));
-            } else {
-                // 如果预测失败，则显示当前设置的预算
-                summaryTextBuilder.append(String.format("- %s月预算: %.2f %s (使用设置的基础预算，预测失败)\n",
-                        nextMonthName, currentSettings.getMonthlyBudget(), currency));
-            }
-            summaryTextBuilder.append("\n");
+            sb.append(String.format("Special Day 增加总额: %.2f\n", result.specialDayTotal));
         } else {
-            summaryTextBuilder.append("基础月预算: 尚未设置\n\n");
+            sb.append("下月无特殊日期预算调整\n");
         }
-
-        Map<String, Double> categoryAdjustments = budgetAdjustmentService
-                .getCategoryAdjustmentsForMonth(nextMonthYearMonth);
-        double totalAdjustments = 0;
-
-        if (!categoryAdjustments.isEmpty()) {
-            summaryTextBuilder.append(String.format("%s特殊日期调整:\n", nextMonthName));
-            for (Map.Entry<String, Double> entry : categoryAdjustments.entrySet()) {
-                summaryTextBuilder
-                        .append(String.format("- %s: +%.2f %s\n", entry.getKey(), entry.getValue(), currency));
-                totalAdjustments += entry.getValue();
+        sb.append("\n--- Saving Goal 预算调整明细 ---\n");
+        if (!result.savingGoalDetails.isEmpty()) {
+            for (BudgetForecastService.SavingGoalDetail detail : result.savingGoalDetails) {
+                sb.append(String.format("- %s: +%.2f\n", detail.name, detail.monthlyContribution));
             }
-            summaryTextBuilder.append(String.format("特殊日期增加总额: %.2f %s\n", totalAdjustments, currency));
+            sb.append(String.format("Saving Goal 增加总额: %.2f\n", result.savingGoalTotal));
         } else {
-            summaryTextBuilder.append(String.format("%s无特殊日期预算调整\n", nextMonthName));
+            sb.append("下月无活跃的储蓄目标\n");
         }
-        summaryTextBuilder.append("\n");
-
-        // 使用下个月的预测预算（而不是当前设置的基础预算）
-        double nextMonthBasebudget = budgetForecastService.getNextMonthBudget();
-        double finalProjectedExpenseBudget = budgetForecastService.getAdjustedNextMonthBudget();
-        summaryTextBuilder
-                .append(String.format("%s月最终预计支出预算: %.2f %s\n", nextMonthName, finalProjectedExpenseBudget, currency));
-
-        double projectedSavingsNextMonth = avgIncome - finalProjectedExpenseBudget;
-        summaryTextBuilder.append(String.format("%s月预计结余 (平均收入 - 预计支出): %.2f %s\n\n", nextMonthName,
-                projectedSavingsNextMonth, currency));
-
-        // Add saving goals contributions
-        summaryTextBuilder.append("--- 预计每月储蓄目标 ---\n");
-        List<SavingGoal> activeSavingGoals = (currentSettings != null && currentSettings.getSavingGoals() != null)
-                ? currentSettings.getSavingGoals().stream()
-                        .filter(SavingGoal::isActive)
-                        .filter(g -> !g.isCompleted())
-                        .collect(java.util.stream.Collectors.toList())
-                : new ArrayList<>();
-        double totalProjectedSavingsContributions = 0.0;
-        if (!activeSavingGoals.isEmpty()) {
-            for (SavingGoal goal : activeSavingGoals) {
-                summaryTextBuilder.append(String.format("- 目标: %s, 每月: %.2f %s\n",
-                        goal.getName(), goal.getMonthlyContribution(), currency));
-                totalProjectedSavingsContributions += goal.getMonthlyContribution();
-            }
-            summaryTextBuilder
-                    .append(String.format("每月储蓄目标总额: %.2f %s\n", totalProjectedSavingsContributions, currency));
-        } else {
-            summaryTextBuilder.append("下月没有活跃的储蓄目标\n");
-        }
-
-        return summaryTextBuilder.toString();
+        sb.append("\n最终预算 = 基础预算 + Special Day 汇总 + Saving Goal 汇总\n");
+        sb.append(String.format("最终预算: %.2f\n", result.finalBudget));
+        return sb.toString();
     }
 
     /**
@@ -1257,89 +1082,38 @@ public class AnalysisPanel extends JPanel {
      * @return String containing the category budget allocation.
      */
     private String generateCategoryBudgetText(YearMonth month) {
-        StringBuilder chartBuilder = new StringBuilder();
+        // 获取预算分析结果
+        BudgetForecastService.BudgetAnalysisResult result = budgetForecastService.analyzeNextMonthBudget();
         Settings currentSettings = settingsService.getSettings();
-        YearMonth nextMonthYearMonth = YearMonth.now().plusMonths(1);
-        List<String> expenseCategories = new ArrayList<>();
-        double nextMonthBudget = 0.0;
-        String currency = "";
-
-        if (currentSettings != null) {
-            if (currentSettings.getExpenseCategories() != null) {
-                expenseCategories.addAll(currentSettings.getExpenseCategories());
-            }
-
-            // 使用下个月的预测预算（可能来自于当前月的计算）
-            nextMonthBudget = budgetForecastService.getNextMonthBudget();
-            if (nextMonthBudget <= 0) {
-                // 如果尚未进行预测，则进行预测
-                nextMonthBudget = budgetForecastService.forecastNextMonthBudget(6);
-                if (nextMonthBudget <= 0) {
-                    // 如果预测失败，则使用设置中的月度预算作为备选
-                    nextMonthBudget = currentSettings.getMonthlyBudget();
-                }
-            }
-
-            currency = currentSettings.getDefaultCurrency() != null ? currentSettings.getDefaultCurrency() : "";
+        String currency = currentSettings != null && currentSettings.getDefaultCurrency() != null ? currentSettings.getDefaultCurrency() : "";
+        StringBuilder chartBuilder = new StringBuilder();
+        chartBuilder.append(String.format("下月各类别预算分配（基础预算=%.2f，special day已加到对应类别）\n\n", result.baseBudget));
+        // 统计所有类别
+        List<String> allCategories = new ArrayList<>(result.categoryAllocations.keySet());
+        if (allCategories.isEmpty() && currentSettings != null && currentSettings.getExpenseCategories() != null) {
+            allCategories.addAll(currentSettings.getExpenseCategories());
         }
-
-        Map<String, Double> categoryAdjustments = budgetAdjustmentService
-                .getCategoryAdjustmentsForMonth(nextMonthYearMonth);
-        double totalAdjustments = 0;
-        for (double adj : categoryAdjustments.values()) {
-            totalAdjustments += adj;
+        double maxCategoryBudget = 0;
+        for (String cat : allCategories) {
+            double val = result.categoryAllocations.getOrDefault(cat, 0.0);
+            if (val > maxCategoryBudget) maxCategoryBudget = val;
         }
-        double finalProjectedExpenseBudget = budgetForecastService.getAdjustedNextMonthBudget();
-
-        if (currentSettings != null && !expenseCategories.isEmpty()) {
-            Map<String, Double> historicalDistPercentages = calculateCategoryDistribution(6);
-            double totalBudgetForChartMax = 0;
-
-            Map<String, Double> categoryTotalBudgets = new HashMap<>();
-            for (String category : expenseCategories) {
-                double historicalPercentage = historicalDistPercentages.getOrDefault(category, 0.0);
-                double baseAllocation = nextMonthBudget * historicalPercentage;
-                double adjustment = categoryAdjustments.getOrDefault(category, 0.0);
-                double totalBudgetForCategory = baseAllocation + adjustment;
-                categoryTotalBudgets.put(category, totalBudgetForCategory);
-                if (totalBudgetForCategory > totalBudgetForChartMax) {
-                    totalBudgetForChartMax = totalBudgetForCategory;
-                }
+        if (maxCategoryBudget == 0) maxCategoryBudget = 1;
+        for (String cat : allCategories) {
+            double val = result.categoryAllocations.getOrDefault(cat, 0.0);
+            chartBuilder.append(String.format("%-18s: ", cat));
+            int barLen = (int) ((val / maxCategoryBudget) * 30);
+            for (int i = 0; i < barLen; i++) chartBuilder.append("*");
+            chartBuilder.append(String.format(" %.2f %s\n", val, currency));
+        }
+        chartBuilder.append("\n--- Saving Goal 预算单独汇总 ---\n");
+        if (!result.savingGoalDetails.isEmpty()) {
+            for (BudgetForecastService.SavingGoalDetail detail : result.savingGoalDetails) {
+                chartBuilder.append(String.format("- %s: +%.2f\n", detail.name, detail.monthlyContribution));
             }
-
-            if (totalBudgetForChartMax == 0 && finalProjectedExpenseBudget > 0) {
-                totalBudgetForChartMax = finalProjectedExpenseBudget;
-            } else if (totalBudgetForChartMax == 0) {
-                totalBudgetForChartMax = 1;
-            }
-
-            chartBuilder.append(String.format(
-                    "Allocation based on historical spending (past 6m) & special date adjustments. Total Budget: %.2f %s\n\n",
-                    finalProjectedExpenseBudget, currency));
-            for (String category : expenseCategories) {
-                double totalBudgetForCategory = categoryTotalBudgets.getOrDefault(category, 0.0);
-                double adjustment = categoryAdjustments.getOrDefault(category, 0.0);
-
-                chartBuilder.append(String.format("%-20s: ", category));
-
-                int barLength = (int) ((totalBudgetForCategory / totalBudgetForChartMax) * 30);
-                if (totalBudgetForChartMax == 0)
-                    barLength = 0;
-
-                for (int i = 0; i < barLength; i++) {
-                    chartBuilder.append("*");
-                }
-                chartBuilder.append(String.format(" %.2f %s", totalBudgetForCategory, currency));
-
-                if (adjustment > 0) {
-                    chartBuilder.append(String.format(" (+%.2f from special dates)", adjustment));
-                } else if (adjustment < 0) {
-                    chartBuilder.append(String.format(" (%.2f from special dates)", adjustment));
-                }
-                chartBuilder.append("\n");
-            }
+            chartBuilder.append(String.format("Saving Goal 增加总额: %.2f\n", result.savingGoalTotal));
         } else {
-            chartBuilder.append("No expense categories defined in settings to display budget allocation.\n");
+            chartBuilder.append("下月无活跃的储蓄目标\n");
         }
         return chartBuilder.toString();
     }
@@ -1354,10 +1128,6 @@ public class AnalysisPanel extends JPanel {
         Settings currentSettings = settingsService.getSettings();
         YearMonth nextMonthYearMonth = YearMonth.now().plusMonths(1);
         String monthName = nextMonthYearMonth.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault());
-        String currency = currentSettings != null && currentSettings.getDefaultCurrency() != null
-                ? currentSettings.getDefaultCurrency()
-                : "";
-
         if (currentSettings != null) {
             List<SpecialDate> allSpecialDates = currentSettings.getSpecialDates();
             boolean foundForNextMonth = false;
@@ -1366,27 +1136,19 @@ public class AnalysisPanel extends JPanel {
                     LocalDate occurrence = sd.getNextOccurrence(nextMonthYearMonth.atDay(1));
                     if (occurrence != null && YearMonth.from(occurrence).equals(nextMonthYearMonth)) {
                         if (!foundForNextMonth) {
-                            specialDatesInfo.append("The following special dates fall in ").append(monthName)
-                                    .append(":\n");
+                            specialDatesInfo.append("下月的Special Day如下：\n");
                             foundForNextMonth = true;
                         }
-                        specialDatesInfo.append(String.format("- %s (%s): %s. Affects '%s' by +%.2f %s.\n",
-                                sd.getName(),
-                                occurrence.format(DateTimeFormatter.ISO_LOCAL_DATE),
-                                sd.getDescription() != null ? sd.getDescription() : "No description",
-                                sd.getAffectedCategory(),
-                                sd.getAmountIncrease(),
-                                currency));
+                        specialDatesInfo.append(String.format("- %s (%s)\n  描述: %s\n", sd.getName(), occurrence.format(DateTimeFormatter.ISO_LOCAL_DATE), sd.getDescription() != null ? sd.getDescription() : "无"));
                     }
                 }
             }
             if (!foundForNextMonth) {
-                specialDatesInfo.append("No user-defined special dates found for ").append(monthName).append(".\n");
+                specialDatesInfo.append(String.format("下月（%s）没有设置Special Day。\n", monthName));
             }
         } else {
-            specialDatesInfo.append("Settings not available to load special dates.\n");
+            specialDatesInfo.append("无法获取设置，无法加载special day。\n");
         }
-        specialDatesInfo.append("\nTip: You can add/manage special dates in the Settings panel.");
         return specialDatesInfo.toString();
     }
 

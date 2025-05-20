@@ -426,7 +426,7 @@ public class TransactionCsvExporter implements TransactionDataSource {
                 }
             }
 
-        } catch (Exception e) {
+        } catch (IOException e) {
             System.err.println("按月导出交易记录时出错: " + e.getMessage()); // 修改错误消息
             // 捕获并打印异常信息
             e.printStackTrace();

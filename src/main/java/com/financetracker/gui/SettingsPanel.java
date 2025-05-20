@@ -742,9 +742,15 @@ public class SettingsPanel extends JPanel {
 
         JPanel formButtonPanel = new JPanel(new FlowLayout(FlowLayout.RIGHT));
         this.addGoalButton = new JButton("Add New Goal");
-        this.addGoalButton.addActionListener(e -> addSavingGoal());
+        this.addGoalButton.addActionListener(e -> {
+            System.out.println("[UI] addSavingGoal() called");
+            addSavingGoal();
+        });
         this.saveGoalButton = new JButton("Save Edited Goal");
-        this.saveGoalButton.addActionListener(e -> saveEditedSavingGoal());
+        this.saveGoalButton.addActionListener(e -> {
+            System.out.println("[UI] saveEditedSavingGoal() called");
+            saveEditedSavingGoal();
+        });
         this.saveGoalButton.setEnabled(false);
         JButton clearFormButton = new JButton("Clear Form / Cancel Edit");
         clearFormButton.addActionListener(e -> clearSavingGoalForm());
@@ -1181,10 +1187,9 @@ public class SettingsPanel extends JPanel {
 
     private void addSavingGoal() {
         SavingGoal newGoal = prepareSavingGoalFromInputs(null);
+        System.out.println("[UI] addSavingGoal() called, goal=" + newGoal);
         if (newGoal != null) {
-            Settings settings = settingsService.getSettings();
-            settings.addSavingGoal(newGoal);
-            settingsService.saveSettings();
+            settingsService.addSavingGoalAndGenerateTransactions(newGoal);
             loadSavingGoals();
             clearSavingGoalForm();
             if (analysisRefreshCallback != null)
@@ -1269,11 +1274,10 @@ public class SettingsPanel extends JPanel {
                     JOptionPane.ERROR_MESSAGE);
             return;
         }
-        SavingGoal updatedGoal = prepareSavingGoalFromInputs(currentEditingSavingGoal);
-        if (updatedGoal != null) {
-            Settings settings = settingsService.getSettings();
-            settings.updateSavingGoal(updatedGoal);
-            settingsService.saveSettings();
+        SavingGoal editedGoal = prepareSavingGoalFromInputs(currentEditingSavingGoal);
+        System.out.println("[UI] saveEditedSavingGoal() called, goal=" + editedGoal);
+        if (editedGoal != null) {
+            settingsService.updateSavingGoalAndRegenerateTransactions(editedGoal);
             loadSavingGoals();
             clearSavingGoalForm();
             if (analysisRefreshCallback != null)

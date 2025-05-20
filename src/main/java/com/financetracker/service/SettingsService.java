@@ -15,6 +15,7 @@ public class SettingsService {
 
     private Settings settings;
     private final SingleItemDataService<Settings> dataService;
+    private TransactionService transactionService;
 
     /**
      * 构造函数
@@ -64,6 +65,9 @@ public class SettingsService {
             if (settings.getLastMonthClosed() == null) {
                 settings.setLastMonthClosed("");
             }
+            if (transactionService != null && transactionService.getAllTransactions().isEmpty()) {
+                settings.setOverallAccountBalance(0.0);
+            }
             return true;
         }
     }
@@ -98,6 +102,27 @@ public class SettingsService {
 
         settings.setBudgetStartDay(day);
         return saveSettings();
+    }
+
+    public void setTransactionService(TransactionService transactionService) {
+        this.transactionService = transactionService;
+    }
+
+    public void addSavingGoalAndGenerateTransactions(com.financetracker.model.SavingGoal savingGoal) {
+        settings.addSavingGoal(savingGoal);
+        saveSettings();
+        if (transactionService != null) {
+            transactionService.generateTransactionsForSavingGoal(savingGoal);
+        }
+    }
+
+    public void updateSavingGoalAndRegenerateTransactions(com.financetracker.model.SavingGoal savingGoal) {
+        settings.updateSavingGoal(savingGoal);
+        saveSettings();
+        if (transactionService != null) {
+            transactionService.deleteTransactionsForSavingGoal(savingGoal.getId());
+            transactionService.generateTransactionsForSavingGoal(savingGoal);
+        }
     }
 }
 

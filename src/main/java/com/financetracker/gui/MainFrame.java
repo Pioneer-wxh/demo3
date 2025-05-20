@@ -20,7 +20,6 @@ import com.financetracker.service.BudgetAdjustmentService;
 import com.financetracker.service.BudgetForecastService;
 import com.financetracker.service.CsvBatchImporter;
 import com.financetracker.service.FinancialCycleService;
-import com.financetracker.service.SerializationService;
 import com.financetracker.service.SettingsService;
 import com.financetracker.service.SpecialDateService;
 import com.financetracker.service.TransactionCsvExporter;
@@ -69,37 +68,16 @@ public class MainFrame extends JFrame {
     /**
      * Constructor for MainFrame.
      */
-    public MainFrame() {
-        // 1. Initialize SettingsService and load Settings first
-        // Correctly instantiate SerializationService and pass it to SettingsService
-        SerializationService<Settings> settingsDataServ = new SerializationService<>(Settings.class);
-        settingsService = new SettingsService(settingsDataServ);
-        settings = settingsService.getSettings();
-
-        // 2. Initialize TransactionDataSource (TransactionCsvExporter)
-        transactionDataSource = new TransactionCsvExporter();
-
-        // 3. Initialize TransactionService
-        transactionService = new TransactionService(transactionDataSource, settings);
-
-        // 4. Initialize other services that depend on settings or transactionService
-        specialDateService = new SpecialDateService(settingsService);
-        budgetAdjustmentService = new BudgetAdjustmentService(settingsService);
-        financialCycleService = new FinancialCycleService(transactionService, settingsService);
-        budgetForecastService = new BudgetForecastService(transactionService, settingsService);
-
-        // 5. 设置FinancialCycleService与BudgetForecastService的关联
-        financialCycleService.setBudgetForecastService(budgetForecastService);
-
-        // 6. Initialize CSV Importer and Exporter instances
-        csvBatchImporter = new CsvBatchImporter(transactionService, settings);
-        if (!(transactionDataSource instanceof TransactionCsvExporter)) {
-            System.err.println(
-                    "Warning: transactionDataSource is not an instance of TransactionCsvExporter. CSV export features in TransactionPanel might fail or use a new instance.");
-            this.csvExporter = new TransactionCsvExporter();
-        } else {
-            this.csvExporter = (TransactionCsvExporter) transactionDataSource;
-        }
+    public MainFrame(SettingsService settingsService, TransactionService transactionService, SpecialDateService specialDateService, BudgetAdjustmentService budgetAdjustmentService, FinancialCycleService financialCycleService, BudgetForecastService budgetForecastService, CsvBatchImporter csvBatchImporter, TransactionCsvExporter csvExporter) {
+        this.settingsService = settingsService;
+        this.transactionService = transactionService;
+        this.specialDateService = specialDateService;
+        this.budgetAdjustmentService = budgetAdjustmentService;
+        this.financialCycleService = financialCycleService;
+        this.budgetForecastService = budgetForecastService;
+        this.csvBatchImporter = csvBatchImporter;
+        this.csvExporter = csvExporter;
+        this.settings = settingsService.getSettings();
 
         // Set up the frame
         setTitle("个人财务跟踪器");
@@ -112,28 +90,15 @@ public class MainFrame extends JFrame {
         JPanel mainPanel = new JPanel(new BorderLayout());
 
         // 创建顶部导航面板
-        // ActionListener for panel switching, to be passed to AppNavigationBar
         ActionListener panelSwitcher = e -> {
             String panelName = e.getActionCommand();
             String buttonText = "";
-            // Determine button text for status update based on panelName (command)
-            // This mapping should ideally be less fragile.
             switch (panelName) {
-                case "home":
-                    buttonText = "首页";
-                    break;
-                case "transactions":
-                    buttonText = "交易记录";
-                    break;
-                case "analysis":
-                    buttonText = "分析";
-                    break;
-                case "settings":
-                    buttonText = "设置";
-                    break;
-                default:
-                    buttonText = panelName;
-                    break;
+                case "home": buttonText = "首页"; break;
+                case "transactions": buttonText = "交易记录"; break;
+                case "analysis": buttonText = "分析"; break;
+                case "settings": buttonText = "设置"; break;
+                default: buttonText = panelName; break;
             }
             showPanel(panelName);
             if (appStatusBar != null) {
@@ -143,64 +108,49 @@ public class MainFrame extends JFrame {
         appNavigationBar = new AppNavigationBar(panelSwitcher);
         mainPanel.add(appNavigationBar, BorderLayout.NORTH);
 
-        // Set up the content panel with card layout
         cardLayout = new CardLayout();
         contentPanel = new JPanel(cardLayout);
         contentPanel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
         mainPanel.add(contentPanel, BorderLayout.CENTER);
 
-        // Create and add the new AppStatusBar
         appStatusBar = new AppStatusBar();
         mainPanel.add(appStatusBar, BorderLayout.SOUTH);
 
-        // Initialize panels
-        homePanel = new HomePanel(transactionService, settingsService, panelSwitcher); // Pass services and listener
-        transactionPanel = new TransactionPanel(transactionService, settingsService, panelSwitcher, csvBatchImporter,
-                csvExporter);
-        analysisPanel = new AnalysisPanel(transactionService, settingsService, specialDateService,
-                budgetAdjustmentService, financialCycleService, budgetForecastService, panelSwitcher);
+        homePanel = new HomePanel(transactionService, settingsService, panelSwitcher);
+        transactionPanel = new TransactionPanel(transactionService, settingsService, panelSwitcher, csvBatchImporter, csvExporter);
+        analysisPanel = new AnalysisPanel(transactionService, settingsService, specialDateService, budgetAdjustmentService, financialCycleService, budgetForecastService, panelSwitcher);
         settingsPanel = new SettingsPanel(
-                settingsService,
-                specialDateService,
-                budgetAdjustmentService,
-                financialCycleService,
-                panelSwitcher,
-                this::refreshCategoryLists, // globalCategoryRefreshCallback
-                this::triggerAnalysisPanelRefresh, // analysisRefreshCallback
-                () -> {
-                    if (homePanel != null)
-                        homePanel.refreshData();
-                } // homePanelRefreshCallback
+            settingsService,
+            specialDateService,
+            budgetAdjustmentService,
+            financialCycleService,
+            panelSwitcher,
+            this::refreshCategoryLists,
+            this::triggerAnalysisPanelRefresh,
+            () -> { if (homePanel != null) homePanel.refreshData(); }
         );
 
-        // Add panels to the content panel
         contentPanel.add(homePanel, "home");
         contentPanel.add(transactionPanel, "transactions");
         contentPanel.add(analysisPanel, "analysis");
         contentPanel.add(settingsPanel, "settings");
 
-        // Show the home panel by default
         cardLayout.show(contentPanel, "home");
-        appNavigationBar.updateNavigationButtons("home"); // 更新导航栏按钮状态
+        appNavigationBar.updateNavigationButtons("home");
         if (appStatusBar != null) {
-            appStatusBar.showTemporaryMessage("欢迎使用个人财务跟踪器"); // Initial message
+            appStatusBar.showTemporaryMessage("欢迎使用个人财务跟踪器");
         }
-
-        // Add the main panel to the frame
         add(mainPanel);
-
-        // Add window listener to save settings on close
         addWindowListener(new WindowAdapter() {
             @Override
             public void windowClosing(WindowEvent e) {
                 settingsService.saveSettings();
                 if (appStatusBar != null) {
-                    appStatusBar.dispose(); // Dispose the status bar timers
+                    appStatusBar.dispose();
                 }
             }
         });
-
-        applyTheme(); // 假设此方法在文件后续部分定义
+        applyTheme();
     }
 
     /**

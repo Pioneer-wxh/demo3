@@ -18,15 +18,11 @@ public class LookAndFeelManager {
      * This should be called once at application startup before any UI is created.
      */
     public static void setInitialLookAndFeel() {
-        LOGGER.info("Setting initial application LookAndFeel...");
         try {
             UIManager.setLookAndFeel("javax.swing.plaf.nimbus.NimbusLookAndFeel");
-            LOGGER.info("Nimbus LookAndFeel applied initially.");
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "Could not set Nimbus LookAndFeel, falling back to system default: " + e.getMessage());
             try {
                 UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
-                LOGGER.info("System default LookAndFeel applied initially.");
             } catch (Exception ex) {
                 LOGGER.log(Level.SEVERE, "Could not set system default LookAndFeel: " + ex.getMessage(), ex);
             }

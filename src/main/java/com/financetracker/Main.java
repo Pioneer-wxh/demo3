@@ -22,62 +22,54 @@ public class Main { // Renamed from AppLauncher
     private static final int ICON_SIZE = 48; // 图标尺寸
 
     public static void main(String[] args) {
-        LOGGER.info("Finance Tracker application starting...");
-
         // Set the initial LookAndFeel before any UI components are created.
         LookAndFeelManager.setInitialLookAndFeel();
-
-        // 创建并显示启动画面
-        SplashScreenManager splashManager = new SplashScreenManager();
-        splashManager.show();
-
-        // 累计历史余额，自动月结
+        final SplashScreenManager splashManager = new SplashScreenManager();
         try {
             com.financetracker.service.SerializationService<com.financetracker.model.Settings> serializationService =
                 new com.financetracker.service.SerializationService<>(com.financetracker.model.Settings.class);
             com.financetracker.service.SettingsService settingsService = new com.financetracker.service.SettingsService(serializationService);
-            com.financetracker.service.TransactionService transactionService = new com.financetracker.service.TransactionService(
-                new com.financetracker.service.TransactionCsvExporter(), settingsService.getSettings());
+            com.financetracker.model.Settings settings = settingsService.getSettings();
+            com.financetracker.service.TransactionCsvExporter transactionDataSource = new com.financetracker.service.TransactionCsvExporter();
+            com.financetracker.service.TransactionService transactionService = new com.financetracker.service.TransactionService(transactionDataSource, settings);
+            settingsService.setTransactionService(transactionService);
+            com.financetracker.service.SpecialDateService specialDateService = new com.financetracker.service.SpecialDateService(settingsService);
+            com.financetracker.service.BudgetAdjustmentService budgetAdjustmentService = new com.financetracker.service.BudgetAdjustmentService(settingsService);
             com.financetracker.service.FinancialCycleService financialCycleService = new com.financetracker.service.FinancialCycleService(transactionService, settingsService);
+            com.financetracker.service.BudgetForecastService budgetForecastService = new com.financetracker.service.BudgetForecastService(transactionService, settingsService);
+            financialCycleService.setBudgetForecastService(budgetForecastService);
+            com.financetracker.service.CsvBatchImporter csvBatchImporter = new com.financetracker.service.CsvBatchImporter(transactionService, settings);
+            com.financetracker.service.TransactionCsvExporter csvExporter = transactionDataSource;
+            splashManager.show();
+            SwingUtilities.invokeLater(() -> {
+                try {
+                    splashManager.simulateLoading();
+                    MainFrame mainFrame = new MainFrame(
+                        settingsService,
+                        transactionService,
+                        specialDateService,
+                        budgetAdjustmentService,
+                        financialCycleService,
+                        budgetForecastService,
+                        csvBatchImporter,
+                        csvExporter
+                    );
+                    ImageIcon appIcon = AppIcon.createAppIcon(ICON_SIZE);
+                    mainFrame.setIconImage(appIcon.getImage());
+                    splashManager.dispose();
+                    mainFrame.setVisible(true);
+                } catch (Exception e) {
+                    LOGGER.log(Level.SEVERE, "Error starting application: " + e.getMessage(), e);
+                    splashManager.dispose();
+                    JOptionPane.showMessageDialog(null,
+                            "Error starting application: " + e.getMessage(),
+                            "Startup Error",
+                            JOptionPane.ERROR_MESSAGE);
+                }
+            });
             financialCycleService.performMonthEndClosing();
         } catch (Exception e) {
-            LOGGER.log(Level.WARNING, "自动累计历史余额失败: " + e.getMessage(), e);
+            LOGGER.log(Level.SEVERE, "自动累计历史余额失败: " + e.getMessage(), e);
         }
-
-        // 确保GUI更新在事件分发线程上完成
-        SwingUtilities.invokeLater(() -> {
-            try {
-                // LookAndFeelManager.applyLookAndFeel(); // Removed: Theme now applied by
-                // MainFrame using settings
-
-                // 模拟加载过程
-                splashManager.simulateLoading();
-
-                // 创建并显示主应用程序窗口
-                LOGGER.info("Initializing main application window...");
-                MainFrame mainFrame = new MainFrame();
-
-                // 设置应用程序图标
-                ImageIcon appIcon = AppIcon.createAppIcon(ICON_SIZE);
-                mainFrame.setIconImage(appIcon.getImage());
-
-                // 关闭启动画面
-                splashManager.dispose();
-
-                // 显示主窗口
-                mainFrame.setVisible(true);
-                LOGGER.info("Application started successfully.");
-
-            } catch (Exception e) {
-                LOGGER.log(Level.SEVERE, "Error starting application: " + e.getMessage(), e);
-                if (splashManager != null) {
-                    splashManager.dispose();
-                }
-                JOptionPane.showMessageDialog(null,
-                        "Error starting application: " + e.getMessage(),
-                        "Startup Error",
-                        JOptionPane.ERROR_MESSAGE);
-            }
-        });
     }
 }

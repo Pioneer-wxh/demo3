@@ -24,9 +24,6 @@ public class SpecialDateService {
         this.settingsService = settingsService;
         if (this.settingsService == null) {
             LOGGER.log(Level.SEVERE, "SettingsService cannot be null in SpecialDateService constructor.");
-            // Optionally throw an IllegalArgumentException here
-            // For now, relying on consuming code to provide a valid service.
-            // throw new IllegalArgumentException("SettingsService cannot be null");
         }
     }
     
