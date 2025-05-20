@@ -25,6 +25,7 @@ import javax.swing.UIManager;
 
 import com.financetracker.model.SavingGoal;
 import com.financetracker.model.Settings;
+import com.financetracker.model.Transaction;
 import com.financetracker.service.SettingsService;
 import com.financetracker.service.TransactionService;
 
@@ -182,22 +183,26 @@ public class HomePanel extends JPanel {
      */
     public void updateRemainingBalance() {
         if (transactionService == null || settingsService == null) {
-            remainingBalanceLabel.setText("Remaining Balance: Error - Services not available");
+            remainingBalanceLabel.setText("Current Month Balance: Error - Services not available");
             return;
         }
         Settings settings = settingsService.getSettings();
         if (settings == null) {
-            remainingBalanceLabel.setText("Remaining Balance: Error - Settings not available");
+            remainingBalanceLabel.setText("Current Month Balance: Error - Settings not available");
             return;
         }
         try {
-            double balance = transactionService.calculateRemainingBalanceForCurrentFinancialMonth(settings);
-            String balanceText = String.format("Remaining Balance (Current Financial Month): %.2f %s", balance, settings.getDefaultCurrency());
+            // 计算本月净收支
+            List<Transaction> currentMonthTransactions = transactionService.getTransactionsForCurrentFinancialMonth();
+            double income = transactionService.getTotalIncome(currentMonthTransactions);
+            double expense = transactionService.getTotalExpense(currentMonthTransactions);
+            double balance = income - expense;
+            String balanceText = String.format("Current Month Balance: %.2f %s", balance, settings.getDefaultCurrency());
             remainingBalanceLabel.setText(balanceText);
-            remainingBalanceLabel.setForeground(balance < 0 ? Color.RED : Color.BLUE); 
+            remainingBalanceLabel.setForeground(balance < 0 ? Color.RED : Color.BLUE);
         } catch (Exception e) {
             System.err.println("Error calculating remaining balance: " + e.getMessage());
-            remainingBalanceLabel.setText("Remaining Balance: Error");
+            remainingBalanceLabel.setText("Current Month Balance: Error");
             remainingBalanceLabel.setForeground(Color.RED);
         }
     }
@@ -284,7 +289,7 @@ public class HomePanel extends JPanel {
         setBackground(isDark ? new Color(45, 45, 45) : UIManager.getColor("Panel.background"));
         
         // Update label colors that might have been set explicitly (e.g., balance labels)
-        if (remainingBalanceLabel != null && remainingBalanceLabel.getText().startsWith("Remaining Balance:")){
+        if (remainingBalanceLabel != null && remainingBalanceLabel.getText().startsWith("Current Month Balance:")){
             // Re-evaluate color based on current value and theme
             // This part needs careful handling if balance text itself indicates error.
              try {

@@ -403,8 +403,10 @@ public class AnalysisPanel extends JPanel {
      * @return The budget panel
      */
     private JPanel createBudgetPanel() {
-        JPanel panel = new JPanel(new BorderLayout(10, 10)); // Add gaps for EAST panel
+        JPanel panel = new JPanel(new BorderLayout(10, 10));
         panel.setBorder(BorderFactory.createEmptyBorder(10, 10, 10, 10));
+
+        YearMonth nextMonthYearMonth = YearMonth.now().plusMonths(1);
 
         // A.4.1, A.4.2: Central panel for summary and category budget chart
         JPanel centralContentPanel = new JPanel();
@@ -414,54 +416,44 @@ public class AnalysisPanel extends JPanel {
         JPanel budgetSummaryPanel = new JPanel(new BorderLayout());
         budgetSummaryPanel.setBorder(BorderFactory.createTitledBorder("Budget Forecast & Adjustments"));
 
-        // Initialize class member
         this.budgetSummaryTextArea = new JTextArea();
         this.budgetSummaryTextArea.setEditable(false);
         this.budgetSummaryTextArea.setLineWrap(true);
         this.budgetSummaryTextArea.setWrapStyleWord(true);
         this.budgetSummaryTextArea.setFont(UIManager.getFont("Label.font"));
-
-        this.budgetSummaryTextArea.setText(generateBudgetSummaryText()); // Populate with generated text
+        this.budgetSummaryTextArea.setText(generateBudgetSummaryText(nextMonthYearMonth));
         JScrollPane budgetSummaryScrollPane = new JScrollPane(this.budgetSummaryTextArea);
         budgetSummaryPanel.add(budgetSummaryScrollPane, BorderLayout.CENTER);
         centralContentPanel.add(budgetSummaryPanel);
-        centralContentPanel.add(Box.createRigidArea(new Dimension(0, 10))); // Spacing
+        centralContentPanel.add(Box.createRigidArea(new Dimension(0, 10)));
 
-        // A.4.1 & A.4.2: Category Budget Bar Chart Panel
+        // Category Budget Bar Chart Panel
         JPanel categoryBudgetChartPanel = new JPanel(new BorderLayout());
         categoryBudgetChartPanel.setBorder(BorderFactory.createTitledBorder("Next Month Category Budget Allocation"));
-
-        // Initialize class member
         this.categoryBudgetChartTextArea = new JTextArea();
         this.categoryBudgetChartTextArea.setEditable(false);
         this.categoryBudgetChartTextArea.setLineWrap(true);
         this.categoryBudgetChartTextArea.setWrapStyleWord(true);
-        this.categoryBudgetChartTextArea.setFont(UIManager.getFont("Label.font")); // Monospaced font might be better
-                                                                                   // for text bars
-
-        this.categoryBudgetChartTextArea.setText(generateCategoryBudgetText()); // Populate with generated text
+        this.categoryBudgetChartTextArea.setFont(UIManager.getFont("Label.font"));
+        this.categoryBudgetChartTextArea.setText(generateCategoryBudgetText(nextMonthYearMonth));
         JScrollPane categoryBudgetChartScrollPane = new JScrollPane(this.categoryBudgetChartTextArea);
         categoryBudgetChartPanel.add(categoryBudgetChartScrollPane, BorderLayout.CENTER);
         centralContentPanel.add(categoryBudgetChartPanel);
 
         panel.add(centralContentPanel, BorderLayout.CENTER);
 
-        // A.4.3: Special Dates Display Panel as a sidebar (EAST)
+        // Special Dates Display Panel as a sidebar (EAST)
         JPanel specialDatesDisplayPanel = new JPanel(new BorderLayout());
         specialDatesDisplayPanel.setBorder(BorderFactory.createTitledBorder("Upcoming Special Dates in "
-                + YearMonth.now().plusMonths(1).getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault())));
-        specialDatesDisplayPanel.setPreferredSize(new Dimension(300, 0)); // Give it a preferred width for sidebar
-
-        // Initialize class member
+                + nextMonthYearMonth.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault())));
+        specialDatesDisplayPanel.setPreferredSize(new Dimension(300, 0));
         this.specialDatesTextArea = new JTextArea();
         this.specialDatesTextArea.setEditable(false);
         this.specialDatesTextArea.setLineWrap(true);
         this.specialDatesTextArea.setWrapStyleWord(true);
         this.specialDatesTextArea.setFont(UIManager.getFont("Label.font"));
-
-        this.specialDatesTextArea.setText(generateSpecialDatesText()); // Populate with generated text
+        this.specialDatesTextArea.setText(generateSpecialDatesText(nextMonthYearMonth));
         specialDatesDisplayPanel.add(new JScrollPane(this.specialDatesTextArea), BorderLayout.CENTER);
-
         panel.add(specialDatesDisplayPanel, BorderLayout.EAST);
 
         return panel;
@@ -1110,14 +1102,14 @@ public class AnalysisPanel extends JPanel {
         System.out.println("AnalysisPanel: Updating budget panel contents...");
 
         if (this.budgetSummaryTextArea != null) {
-            this.budgetSummaryTextArea.setText(generateBudgetSummaryText());
+            this.budgetSummaryTextArea.setText(generateBudgetSummaryText(YearMonth.now().plusMonths(1)));
             this.budgetSummaryTextArea.setCaretPosition(0);
         } else {
             System.err.println("AnalysisPanel: budgetSummaryTextArea is null, cannot update.");
         }
 
         if (this.categoryBudgetChartTextArea != null) {
-            this.categoryBudgetChartTextArea.setText(generateCategoryBudgetText());
+            this.categoryBudgetChartTextArea.setText(generateCategoryBudgetText(YearMonth.now().plusMonths(1)));
             this.categoryBudgetChartTextArea.setCaretPosition(0);
         } else {
             System.err.println("AnalysisPanel: categoryBudgetChartTextArea is null, cannot update.");
@@ -1131,12 +1123,11 @@ public class AnalysisPanel extends JPanel {
                                                                                                           // JScrollPane
                                                                                                           // -> JPanel
             if (specialDatesDisplayPanel != null) {
-                YearMonth nextMonth = YearMonth.now().plusMonths(1);
-                String monthName = nextMonth.getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault());
+                String monthName = YearMonth.now().plusMonths(1).getMonth().getDisplayName(TextStyle.FULL, Locale.getDefault());
                 specialDatesDisplayPanel
                         .setBorder(BorderFactory.createTitledBorder("Upcoming Special Dates in " + monthName));
             }
-            this.specialDatesTextArea.setText(generateSpecialDatesText());
+            this.specialDatesTextArea.setText(generateSpecialDatesText(YearMonth.now().plusMonths(1)));
             this.specialDatesTextArea.setCaretPosition(0);
         } else {
             System.err.println("AnalysisPanel: specialDatesTextArea is null, cannot update.");
@@ -1154,7 +1145,7 @@ public class AnalysisPanel extends JPanel {
      * 
      * @return String containing the budget summary.
      */
-    private String generateBudgetSummaryText() {
+    private String generateBudgetSummaryText(YearMonth month) {
         LocalDate today = LocalDate.now();
         YearMonth currentMonth = YearMonth.now();
         YearMonth nextMonthYearMonth = currentMonth.plusMonths(1);
@@ -1265,7 +1256,7 @@ public class AnalysisPanel extends JPanel {
      * 
      * @return String containing the category budget allocation.
      */
-    private String generateCategoryBudgetText() {
+    private String generateCategoryBudgetText(YearMonth month) {
         StringBuilder chartBuilder = new StringBuilder();
         Settings currentSettings = settingsService.getSettings();
         YearMonth nextMonthYearMonth = YearMonth.now().plusMonths(1);
@@ -1358,7 +1349,7 @@ public class AnalysisPanel extends JPanel {
      * 
      * @return String containing upcoming special dates information.
      */
-    private String generateSpecialDatesText() {
+    private String generateSpecialDatesText(YearMonth month) {
         StringBuilder specialDatesInfo = new StringBuilder();
         Settings currentSettings = settingsService.getSettings();
         YearMonth nextMonthYearMonth = YearMonth.now().plusMonths(1);

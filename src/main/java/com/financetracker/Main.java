@@ -31,6 +31,19 @@ public class Main { // Renamed from AppLauncher
         SplashScreenManager splashManager = new SplashScreenManager();
         splashManager.show();
 
+        // 累计历史余额，自动月结
+        try {
+            com.financetracker.service.SerializationService<com.financetracker.model.Settings> serializationService =
+                new com.financetracker.service.SerializationService<>(com.financetracker.model.Settings.class);
+            com.financetracker.service.SettingsService settingsService = new com.financetracker.service.SettingsService(serializationService);
+            com.financetracker.service.TransactionService transactionService = new com.financetracker.service.TransactionService(
+                new com.financetracker.service.TransactionCsvExporter(), settingsService.getSettings());
+            com.financetracker.service.FinancialCycleService financialCycleService = new com.financetracker.service.FinancialCycleService(transactionService, settingsService);
+            financialCycleService.performMonthEndClosing();
+        } catch (Exception e) {
+            LOGGER.log(Level.WARNING, "自动累计历史余额失败: " + e.getMessage(), e);
+        }
+
         // 确保GUI更新在事件分发线程上完成
         SwingUtilities.invokeLater(() -> {
             try {
