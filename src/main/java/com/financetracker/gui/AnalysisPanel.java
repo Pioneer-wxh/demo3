@@ -690,8 +690,10 @@ public class AnalysisPanel extends JPanel {
                 }
             }
         }
+        
         // 显示当前月saving goal
         boolean hasSavingGoal = false;
+        double totalMonthlySavingContribution = 0.0;
         if (settings != null && settings.getSavingGoals() != null) {
             for (SavingGoal goal : settings.getSavingGoals()) {
                 if (goal.isActive() && !goal.isCompleted() && goal.getMonthlyContribution() > 0) {
@@ -704,10 +706,68 @@ public class AnalysisPanel extends JPanel {
                             hasSavingGoal = true;
                         }
                         summary.append(String.format("- %s: %.2f\n", goal.getName(), goal.getMonthlyContribution()));
+                        totalMonthlySavingContribution += goal.getMonthlyContribution();
                     }
                 }
             }
         }
+        
+        // 计算预计本月支出（基于前三个月数据，线性回归）
+        YearMonth targetMonth = YearMonth.from(startDate);
+        double expectedBudget = 0.0;
+        if (budgetForecastService != null) {
+            expectedBudget = budgetForecastService.forecastBudgetForMonth(targetMonth, 3);
+            
+            // 分离出saving goals类别的支出
+            double savingGoalsExpense = 0.0;
+            for (Transaction t : transactions) {
+                if (t.isExpense() && "Saving Goal".equals(t.getCategory())) {
+                    savingGoalsExpense += t.getAmount();
+                }
+            }
+            
+            // 计算非saving goal的实际支出
+            double actualNonSavingExpense = totalExpense - savingGoalsExpense;
+            
+            // 添加Special Day调整
+            double specialDayAdjustment = 0.0;
+            Map<String, Double> categoryAdjustments = null;
+            if (settingsService != null) {
+                BudgetAdjustmentService budgetAdjustmentService = new BudgetAdjustmentService(settingsService);
+                categoryAdjustments = budgetAdjustmentService.getCategoryAdjustmentsForMonth(targetMonth);
+                for (double adjustment : categoryAdjustments.values()) {
+                    specialDayAdjustment += adjustment;
+                }
+            }
+            
+            // 计算最终预期预算：基础预算 + Special Day调整 + Saving Goals缴费
+            double finalExpectedBudget = expectedBudget + specialDayAdjustment + totalMonthlySavingContribution;
+            
+            // 显示预计支出信息
+            summary.append("\n预期支出分析：\n");
+            summary.append(String.format("基础预期支出（基于前三个月）: %.2f\n", expectedBudget));
+            if (specialDayAdjustment > 0) {
+                summary.append(String.format("特殊日期调整: +%.2f\n", specialDayAdjustment));
+            }
+            if (totalMonthlySavingContribution > 0) {
+                summary.append(String.format("储蓄目标月供款: +%.2f\n", totalMonthlySavingContribution));
+            }
+            summary.append(String.format("最终预期总支出: %.2f\n", finalExpectedBudget));
+            summary.append(String.format("实际总支出: %.2f\n", totalExpense));
+            
+            // 比较实际支出与预期支出
+            double difference = totalExpense - finalExpectedBudget;
+            if (difference > 0) {
+                summary.append(String.format("超出预期: +%.2f (%.2f%%)\n", 
+                    difference, finalExpectedBudget > 0 ? difference / finalExpectedBudget * 100 : 0));
+            } else if (difference < 0) {
+                summary.append(String.format("少于预期: %.2f (%.2f%%)\n", 
+                    difference, finalExpectedBudget > 0 ? difference / finalExpectedBudget * 100 : 0));
+            } else {
+                summary.append("与预期相符\n");
+            }
+        }
+        
         summaryTextArea.setText(summary.toString());
     }
 
